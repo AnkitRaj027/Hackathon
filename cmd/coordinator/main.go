@@ -14,9 +14,11 @@ import (
 
 	"vault/internal/config"
 	"vault/internal/coordinator"
+	"vault/internal/detector"
 	"vault/internal/health"
 	"vault/internal/logging"
 	"vault/internal/placement"
+	"vault/internal/repair"
 	pb "vault/proto/coordinator"
 )
 
@@ -57,6 +59,17 @@ func main() {
 	}
 
 	coordService := coordinator.NewService(cfg, pool, placementStrategy)
+
+	// Phase 2: Active Failure Detector
+	failDetector := detector.NewDetector(pool, nodeIDs, detector.DefaultConfig())
+	failDetector.Start(context.Background())
+	defer failDetector.Stop()
+	coordService.SetDetector(failDetector)
+
+	// Phase 2: Automated Background Self-Healing Repair Manager
+	repairMgr := repair.NewManager(pool, failDetector, nodeIDs, cfg.ReplicationFactor, 5*time.Second)
+	repairMgr.Start(context.Background())
+	defer repairMgr.Stop()
 
 	lis, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {

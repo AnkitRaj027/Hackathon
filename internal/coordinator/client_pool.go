@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	pbMeta "vault/proto/metadata"
 	pbStorage "vault/proto/storage"
@@ -104,8 +106,27 @@ func (p *ClientPool) CheckStorageNode(ctx context.Context, nodeID string) (strin
 	_, err = client.VerifyChecksum(probeCtx, &pbStorage.VerifyChecksumRequest{
 		ChunkId: "__probe__",
 	})
-	// A NotFound error indicates the node is running and responding to RPCs
+	if err != nil {
+		st, ok := status.FromError(err)
+		if ok && (st.Code() == codes.NotFound || st.Code() == codes.InvalidArgument) {
+			// Node is running and actively responding to gRPC requests
+			return addr, nil
+		}
+		// Connection refused, unavailable, timeout, etc.
+		p.InvalidateStorageConn(nodeID)
+		return addr, err
+	}
 	return addr, nil
+}
+
+// InvalidateStorageConn discards a cached connection so reconnect attempts dial freshly.
+func (p *ClientPool) InvalidateStorageConn(nodeID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if conn, ok := p.storageConns[nodeID]; ok {
+		_ = conn.Close()
+		delete(p.storageConns, nodeID)
+	}
 }
 
 // Close closes all pooled connections.

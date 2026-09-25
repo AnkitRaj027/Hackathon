@@ -17,6 +17,7 @@ import (
 	"vault/internal/checksum"
 	"vault/internal/chunking"
 	"vault/internal/config"
+	"vault/internal/detector"
 	"vault/internal/metadata"
 	"vault/internal/placement"
 	pbCoord "vault/proto/coordinator"
@@ -30,6 +31,7 @@ type Service struct {
 	cfg       *config.CoordinatorConfig
 	pool      *ClientPool
 	placement placement.PlacementStrategy
+	detector  *detector.Detector
 }
 
 // NewService creates a new Coordinator service.
@@ -39,6 +41,11 @@ func NewService(cfg *config.CoordinatorConfig, pool *ClientPool, placementStrate
 		pool:      pool,
 		placement: placementStrategy,
 	}
+}
+
+// SetDetector configures the node failure detector for liveness tracking.
+func (s *Service) SetDetector(d *detector.Detector) {
+	s.detector = d
 }
 
 // PutObject processes an object upload stream, chunks it, persists replicas, and commits metadata.
@@ -326,13 +333,16 @@ func (s *Service) GetObject(req *pbCoord.GetObjectRequest, stream pbCoord.Coordi
 }
 
 // readChunkWithFailover attempts to read a chunk from its replica nodes in order, validating the checksum.
+// If any replica failed (connection, missing chunk, or SHA mismatch), it triggers Read Repair once a valid chunk is found.
 func (s *Service) readChunkWithFailover(ctx context.Context, chunkMeta *pbMeta.ChunkMetadata) ([]byte, error) {
 	var lastErr error
+	var damagedNodes []string
 
 	for _, nodeID := range chunkMeta.GetReplicas() {
 		storageClient, err := s.pool.GetStorageClient(nodeID)
 		if err != nil {
 			lastErr = fmt.Errorf("node %s connection failed: %w", nodeID, err)
+			damagedNodes = append(damagedNodes, nodeID)
 			continue
 		}
 
@@ -343,6 +353,7 @@ func (s *Service) readChunkWithFailover(ctx context.Context, chunkMeta *pbMeta.C
 		if err != nil {
 			cancel()
 			lastErr = fmt.Errorf("node %s GetChunk call failed: %w", nodeID, err)
+			damagedNodes = append(damagedNodes, nodeID)
 			continue
 		}
 
@@ -363,6 +374,7 @@ func (s *Service) readChunkWithFailover(ctx context.Context, chunkMeta *pbMeta.C
 
 		if streamErr != nil {
 			lastErr = fmt.Errorf("node %s streaming chunk failed: %w", nodeID, streamErr)
+			damagedNodes = append(damagedNodes, nodeID)
 			continue
 		}
 
@@ -378,14 +390,60 @@ func (s *Service) readChunkWithFailover(ctx context.Context, chunkMeta *pbMeta.C
 				"actual", actualSHA,
 			)
 			lastErr = fmt.Errorf("checksum mismatch on node %s: expected %s, got %s", nodeID, chunkMeta.GetSha256(), actualSHA)
+			damagedNodes = append(damagedNodes, nodeID)
 			continue
 		}
 
 		// Valid chunk retrieved!
+		if len(damagedNodes) > 0 {
+			s.triggerReadRepair(chunkMeta, data, damagedNodes)
+		}
+
 		return data, nil
 	}
 
 	return nil, fmt.Errorf("all replicas failed for chunk %s: %w", chunkMeta.GetChunkId(), lastErr)
+}
+
+// triggerReadRepair heals corrupted or lagging replica nodes asynchronously with verified chunk data.
+func (s *Service) triggerReadRepair(chunkMeta *pbMeta.ChunkMetadata, validData []byte, damagedNodes []string) {
+	for _, nodeID := range damagedNodes {
+		go func(nid string) {
+			client, err := s.pool.GetStorageClient(nid)
+			if err != nil {
+				slog.Warn("READ_REPAIR_SKIPPED_UNAVAILABLE",
+					"node", nid,
+					"chunk_id", chunkMeta.GetChunkId(),
+					"error", err,
+				)
+				return
+			}
+
+			repairCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			resp, putErr := client.PutChunk(repairCtx, &pbStorage.PutChunkRequest{
+				ChunkId:   chunkMeta.GetChunkId(),
+				Data:      validData,
+				Checksum:  chunkMeta.GetSha256(),
+				ObjectKey: chunkMeta.GetObjectKey(),
+				Index:     chunkMeta.GetIndex(),
+			})
+			if putErr != nil || (resp != nil && !resp.GetSuccess()) {
+				slog.Warn("READ_REPAIR_FAILED",
+					"node", nid,
+					"chunk_id", chunkMeta.GetChunkId(),
+					"error", putErr,
+				)
+			} else {
+				slog.Info("READ_REPAIR_SUCCESS",
+					"node", nid,
+					"chunk_id", chunkMeta.GetChunkId(),
+					"bytes_repaired", len(validData),
+				)
+			}
+		}(nodeID)
+	}
 }
 
 // DeleteObject deletes an object's metadata and chunk data from all storage nodes idempotently.
@@ -453,15 +511,17 @@ func (s *Service) InspectObject(ctx context.Context, req *pbCoord.InspectObjectR
 	}, nil
 }
 
-// ListNodes returns the status of storage nodes in the cluster.
+// ListNodes returns the status of storage nodes in the cluster using Failure Detector telemetry.
 func (s *Service) ListNodes(ctx context.Context, req *pbCoord.ListNodesRequest) (*pbCoord.ListNodesResponse, error) {
 	var nodes []*pbCoord.StorageNodeInfo
 
 	for _, nodeID := range s.placement.AllNodes() {
 		addr, err := s.pool.CheckStorageNode(ctx, nodeID)
 		nodeStatus := "HEALTHY"
-		if err != nil {
-			nodeStatus = "UNREACHABLE"
+		if s.detector != nil {
+			nodeStatus = string(s.detector.GetNodeStatus(nodeID))
+		} else if err != nil {
+			nodeStatus = "DEAD"
 		}
 		nodes = append(nodes, &pbCoord.StorageNodeInfo{
 			NodeId:  nodeID,

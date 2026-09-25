@@ -14,6 +14,7 @@ import (
 	"vault/internal/config"
 	"vault/internal/health"
 	"vault/internal/logging"
+	"vault/internal/scrubber"
 	"vault/internal/storage"
 	pb "vault/proto/storage"
 )
@@ -41,6 +42,16 @@ func main() {
 		logger.Error("failed initializing storage server", "error", err)
 		os.Exit(1)
 	}
+
+	// Phase 2: Background Disk Scrubber (Bit-Rot Detection)
+	diskScrubber := scrubber.NewDiskScrubber(cfg.NodeID, cfg.DataDir)
+	periodicScrubber := scrubber.NewPeriodicScrubber(diskScrubber, 30*time.Second, func(rep *scrubber.ScrubReport) {
+		if len(rep.CorruptedChunks) > 0 {
+			logger.Error("scrubber_detected_bit_rot", "corrupted_count", len(rep.CorruptedChunks), "node", cfg.NodeID)
+		}
+	})
+	periodicScrubber.Start(context.Background())
+	defer periodicScrubber.Stop()
 
 	lis, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
