@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package coordinator;
+
+option go_package = "vault/proto/coordinator";
+
+import "proto/metadata.proto";
+
+service CoordinatorService {
+  rpc PutObject(stream PutObjectRequest) returns (PutObjectResponse);
+  rpc GetObject(GetObjectRequest) returns (stream GetObjectResponse);
+  rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
+  rpc InspectObject(InspectObjectRequest) returns (InspectObjectResponse);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+}
+
+message ObjectHeader {
+  string key = 1;
+  int64 size = 2;
+  string content_type = 3;
+  map<string, string> metadata = 4;
+}
+
+message PutObjectRequest {
+  oneof payload {
+    ObjectHeader header = 1;
+    bytes chunk_data = 2;
+  }
+}
+
+message PutObjectResponse {
+  string key = 1;
+  int64 size = 2;
+  int64 chunk_count = 3;
+  int32 replication_factor = 4;
+  string checksum = 5;
+  bool success = 6;
+  string error_message = 7;
+}
+
+message GetObjectRequest {
+  string key = 1;
+}
+
+message GetObjectResponse {
+  oneof payload {
+    ObjectHeader header = 1;
+    bytes chunk_data = 2;
+  }
+}
+
+message DeleteObjectRequest {
+  string key = 1;
+}
+
+message DeleteObjectResponse {
+  string key = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+message InspectObjectRequest {
+  string key = 1;
+}
+
+message InspectObjectResponse {
+  metadata.ObjectMetadata metadata = 1;
+}
+
+message ListNodesRequest {}
+
+message StorageNodeInfo {
+  string node_id = 1;
+  string address = 2;
+  string status = 3;
+  int64 total_chunks = 4;
+}
+
+message ListNodesResponse {
+  repeated StorageNodeInfo nodes = 1;
+}

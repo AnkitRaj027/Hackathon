@@ -1,0 +1,33 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts & coverage
+*.out
+*.test
+coverage.txt
+test-data/
+
+# Data volumes
+data/*
+!data/.gitkeep
+storage-data/
+etcd-data/
+
+# Dependencies & IDE
+vendor/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

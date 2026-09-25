@@ -1,0 +1,16 @@
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/metadata ./cmd/metadata
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /bin/metadata /usr/local/bin/metadata
+
+EXPOSE 50050 8080
+
+ENTRYPOINT ["/usr/local/bin/metadata"]

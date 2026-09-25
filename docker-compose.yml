@@ -1,0 +1,126 @@
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.17
+    container_name: vault-etcd
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd-0
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd:2380
+      - --initial-cluster=etcd-0=http://etcd:2380
+      - --initial-cluster-state=new
+    ports:
+      - "2379:2379"
+    volumes:
+      - vault-etcd:/etcd-data
+    networks:
+      - vault-net
+
+  metadata:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.metadata
+    container_name: vault-metadata
+    environment:
+      - VAULT_METADATA_GRPC_ADDR=:50050
+      - VAULT_METADATA_HTTP_PORT=8080
+      - VAULT_ETCD_ENDPOINTS=etcd:2379
+    ports:
+      - "50050:50050"
+      - "8080:8080"
+    depends_on:
+      - etcd
+    networks:
+      - vault-net
+
+  storage-01:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.storage
+    container_name: vault-storage-01
+    environment:
+      - VAULT_NODE_ID=storage-01
+      - VAULT_DATA_DIR=/data
+      - VAULT_GRPC_ADDR=:50051
+      - VAULT_HTTP_PORT=8081
+    ports:
+      - "50051:50051"
+      - "8081:8081"
+    volumes:
+      - vault-storage-01:/data
+    networks:
+      - vault-net
+
+  storage-02:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.storage
+    container_name: vault-storage-02
+    environment:
+      - VAULT_NODE_ID=storage-02
+      - VAULT_DATA_DIR=/data
+      - VAULT_GRPC_ADDR=:50051
+      - VAULT_HTTP_PORT=8081
+    ports:
+      - "50052:50051"
+      - "8082:8081"
+    volumes:
+      - vault-storage-02:/data
+    networks:
+      - vault-net
+
+  storage-03:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.storage
+    container_name: vault-storage-03
+    environment:
+      - VAULT_NODE_ID=storage-03
+      - VAULT_DATA_DIR=/data
+      - VAULT_GRPC_ADDR=:50051
+      - VAULT_HTTP_PORT=8081
+    ports:
+      - "50053:50051"
+      - "8083:8081"
+    volumes:
+      - vault-storage-03:/data
+    networks:
+      - vault-net
+
+  coordinator:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.coordinator
+    container_name: vault-coordinator
+    environment:
+      - VAULT_COORDINATOR_GRPC_ADDR=:50055
+      - VAULT_COORDINATOR_HTTP_PORT=8085
+      - VAULT_METADATA_ADDR=metadata:50050
+      - VAULT_STORAGE_NODES=storage-01=storage-01:50051,storage-02=storage-02:50051,storage-03=storage-03:50051
+      - VAULT_CHUNK_SIZE=4194304
+      - VAULT_REPLICATION_FACTOR=3
+      - VAULT_WRITE_QUORUM=3
+      - VAULT_READ_QUORUM=1
+    ports:
+      - "50055:50055"
+      - "8085:8085"
+    depends_on:
+      - metadata
+      - storage-01
+      - storage-02
+      - storage-03
+    networks:
+      - vault-net
+
+volumes:
+  vault-etcd:
+  vault-storage-01:
+  vault-storage-02:
+  vault-storage-03:
+
+networks:
+  vault-net:
+    driver: bridge

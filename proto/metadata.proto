@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package metadata;
+
+option go_package = "vault/proto/metadata";
+
+service MetadataService {
+  rpc PutObject(PutObjectMetadataRequest) returns (PutObjectMetadataResponse);
+  rpc GetObject(GetObjectMetadataRequest) returns (GetObjectMetadataResponse);
+  rpc DeleteObject(DeleteObjectMetadataRequest) returns (DeleteObjectMetadataResponse);
+  rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse);
+}
+
+message ChunkMetadata {
+  string chunk_id = 1;
+  string object_key = 2;
+  int64 index = 3;
+  int64 size = 4;
+  string sha256 = 5;
+  repeated string replicas = 6;
+}
+
+message ObjectMetadata {
+  string key = 1;
+  int64 size = 2;
+  string content_type = 3;
+  int64 created_at = 4;
+  repeated ChunkMetadata chunks = 5;
+  map<string, string> custom_metadata = 6;
+}
+
+message PutObjectMetadataRequest {
+  ObjectMetadata metadata = 1;
+}
+
+message PutObjectMetadataResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message GetObjectMetadataRequest {
+  string key = 1;
+}
+
+message GetObjectMetadataResponse {
+  bool found = 1;
+  ObjectMetadata metadata = 2;
+  string error_message = 3;
+}
+
+message DeleteObjectMetadataRequest {
+  string key = 1;
+}
+
+message DeleteObjectMetadataResponse {
+  bool success = 1;
+  ObjectMetadata deleted_metadata = 2;
+  string error_message = 3;
+}
+
+message ListObjectsRequest {
+  string prefix = 1;
+  int32 limit = 2;
+}
+
+message ListObjectsResponse {
+  repeated ObjectMetadata objects = 1;
+}
