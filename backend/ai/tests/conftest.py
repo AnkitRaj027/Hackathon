@@ -14,6 +14,7 @@ class FakeModel:
         self.error = error
         self.previous_ids: list[str | None] = []
         self.submitted_results: list[dict[str, Any]] = []
+        self.submitted_batches: list[list[dict[str, Any]]] = []
         self.api_key = None
         self.model = "fake"
 
@@ -26,6 +27,13 @@ class FakeModel:
     def submit_tool_result(self, tool_name, call_id, result, interaction_id, tools):
         self.submitted_results.append({"tool": tool_name, "call_id": call_id, "interaction_id": interaction_id, "result": result})
         return self.replies.pop(0) if self.replies else ModelReply(text="Operation result received.")
+
+    def submit_tool_results(self, results, interaction_id, tools):
+        self.submitted_batches.append(results)
+        self.submitted_results.extend(
+            {**item, "interaction_id": interaction_id} for item in results
+        )
+        return self.replies.pop(0) if self.replies else ModelReply(text="Operation results received.")
 
 
 class SpyVaultService(MockVaultService):
@@ -48,9 +56,14 @@ def tool_reply(name: str, arguments: dict[str, Any], interaction_id: str = "inte
 
 @pytest.fixture
 def agent_factory():
-    def create(replies=(), service=None, error=None, ttl=300):
+    def create(replies=(), service=None, error=None, ttl=300, max_tool_iterations=6):
         model = FakeModel(replies, error)
-        agent = VaultAIAgent(service=service or MockVaultService(), model=model, approval_ttl_seconds=ttl)
+        agent = VaultAIAgent(
+            service=service or MockVaultService(),
+            model=model,
+            approval_ttl_seconds=ttl,
+            max_tool_iterations=max_tool_iterations,
+        )
         return agent, model
 
     return create

@@ -34,6 +34,7 @@ class PendingAction(BaseModel):
 class ToolCall(BaseModel):
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    call_id: str | None = None
 
 
 class AIResponse(BaseModel):

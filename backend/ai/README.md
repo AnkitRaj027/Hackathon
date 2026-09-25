@@ -73,6 +73,12 @@ curl.exe -X POST http://127.0.0.1:8000/api/ai/reject/ACTION_ID
 
 Demo prompts include node health, unavailable nodes, `report.pdf` metadata/replica count/integrity, replica repair, rebalance, node2 failure and restore, replication factor update, and deletion. A configured valid Gemini key is required for natural-language API requests. Unit tests fake the model and do not call Gemini.
 
+## Replica Repair Demo
+
+Open `http://127.0.0.1:8000/docs` after starting the API. In Swagger, use `POST /api/ai/chat` to ask `Simulate failure of node3`; approve the returned action with `POST /api/ai/approve/{action_id}` and `{"approved":true}`. Then ask `Show metadata for object-1` to inspect its two active replicas and degraded status. Ask `Repair the missing replica of object-1`; the chat response must be `approval_required`. Approve that action. The result includes a fresh metadata and integrity verification, with three healthy replicas and healthy integrity. Repair is never run by the chat request itself.
+
+For multi-tool read checks, submit `Show me the replica status of object-1` or `Check object-1 and tell me whether it needs repair` to `POST /api/ai/chat`. The agent validates and executes read-only calls, returns their results to Gemini, and continues until it gets a final answer or reaches its tool-call limit. If Gemini requests `repair_replica`, the agent stops and returns `approval_required`; it never executes a modifying call from a read batch.
+
 ## Audit and Operational Limits
 
 Structured audit events are written to the server logger and held in memory for development. The current pending-action store, session interaction IDs, and audit event list are process-local and are lost on restart. Add persistent storage, authenticated principals, rate limiting, and request-level authorization before production use. API responses intentionally omit stack traces; details are logged server-side.

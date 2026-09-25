@@ -22,6 +22,7 @@ from .tools import ToolArgumentError, ToolRegistry
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_MAX_TOOL_ITERATIONS = 6
 
 
 @dataclass
@@ -46,6 +47,13 @@ class ModelProvider(Protocol):
         tool_name: str,
         call_id: str | None,
         result: dict[str, Any],
+        interaction_id: str | None,
+        tools: list[dict[str, Any]],
+    ) -> ModelReply: ...
+
+    def submit_tool_results(
+        self,
+        results: list[dict[str, Any]],
         interaction_id: str | None,
         tools: list[dict[str, Any]],
     ) -> ModelReply: ...
@@ -97,19 +105,36 @@ class GeminiInteractionsModel:
         interaction_id: str | None,
         tools: list[dict[str, Any]],
     ) -> ModelReply:
-        if not interaction_id or not call_id:
-            raise RuntimeError("Gemini did not return the identifiers required to submit a tool result.")
+        if not call_id:
+            raise RuntimeError("Gemini did not return the identifier required to submit a tool result.")
+        return self.submit_tool_results(
+            [{"name": tool_name, "call_id": call_id, "result": result}],
+            interaction_id,
+            tools,
+        )
+
+    def submit_tool_results(
+        self,
+        results: list[dict[str, Any]],
+        interaction_id: str | None,
+        tools: list[dict[str, Any]],
+    ) -> ModelReply:
+        if not interaction_id or not results or any(not item.get("call_id") for item in results):
+            raise RuntimeError("Gemini did not return the identifiers required to submit tool results.")
         interaction = self._get_client().interactions.create(
             model=self.model,
             previous_interaction_id=interaction_id,
             system_instruction=SYSTEM_PROMPT,
             tools=tools,
-            input=[{
-                "type": "function_result",
-                "name": tool_name,
-                "call_id": call_id,
-                "result": [{"type": "text", "text": json.dumps(result, default=str)}],
-            }],
+            input=[
+                {
+                    "type": "function_result",
+                    "name": item["name"],
+                    "call_id": item["call_id"],
+                    "result": [{"type": "text", "text": json.dumps(item["result"], default=str)}],
+                }
+                for item in results
+            ],
         )
         return self._as_reply(interaction)
 
@@ -120,7 +145,7 @@ class GeminiInteractionsModel:
         for step in getattr(interaction, "steps", []) or []:
             if getattr(step, "type", None) != "function_call":
                 continue
-            calls.append(ToolCall(name=step.name, arguments=step.arguments or {}))
+            calls.append(ToolCall(name=step.name, arguments=step.arguments or {}, call_id=getattr(step, "id", None)))
             call_id = getattr(step, "id", None)
         return ModelReply(
             text=getattr(interaction, "output_text", "") or "",
@@ -144,6 +169,7 @@ class VaultAIAgent:
         audit_log: AuditLog | None = None,
         retriever: KnowledgeRetriever | None = None,
         approval_ttl_seconds: int = APPROVAL_TTL_SECONDS,
+        max_tool_iterations: int = DEFAULT_MAX_TOOL_ITERATIONS,
     ) -> None:
         self.service = service or MockVaultService()
         self.tools = ToolRegistry(self.service)
@@ -151,6 +177,7 @@ class VaultAIAgent:
         self.audit_log = audit_log or AuditLog()
         self.retriever = retriever or KnowledgeRetriever()
         self.approval_ttl_seconds = approval_ttl_seconds
+        self.max_tool_iterations = max(1, max_tool_iterations)
         self.pending_actions: dict[str, PendingAction] = {}
         self.session_interactions: dict[str, str] = {}
         self._lock = RLock()
@@ -158,6 +185,7 @@ class VaultAIAgent:
     def chat(self, message: str, session_id: str | None = None) -> dict[str, Any]:
         session_id = session_id or uuid4().hex
         grounded_by_tool = False
+        tool_calls_processed = 0
         self.audit_log.record(session_id=session_id, user_request=message, status="received")
         try:
             reply = self.model.complete(
@@ -166,7 +194,7 @@ class VaultAIAgent:
                 previous_interaction_id=self.session_interactions.get(session_id),
                 knowledge_context=self.retriever.retrieve(message),
             )
-            for _ in range(4):
+            for _ in range(self.max_tool_iterations):
                 calls = reply.tool_calls or []
                 if not calls:
                     self._remember(session_id, reply.interaction_id)
@@ -178,13 +206,25 @@ class VaultAIAgent:
                         )
                     self.audit_log.record(session_id=session_id, user_request=message, status="answered")
                     return {"type": "answer", "message": answer, "session_id": session_id}
-                if len(calls) != 1:
-                    return self._error("I received an unsupported multi-tool request. Please try one operation at a time.", session_id)
+                validated_calls: list[tuple[ToolCall, Any, dict[str, Any], str]] = []
+                for call in calls:
+                    tool = self.tools.get(call.name)
+                    arguments = self.tools.validate_arguments(tool, call.arguments)
+                    call_id = call.call_id or (reply.call_id if len(calls) == 1 else None)
+                    if not call_id:
+                        raise RuntimeError("Gemini returned a function call without a call ID.")
+                    validated_calls.append((call, tool, arguments, call_id))
 
-                call = calls[0]
-                tool = self.tools.get(call.name)
-                arguments = self.tools.validate_arguments(tool, call.arguments)
-                if requires_approval(tool.risk_level):
+                if tool_calls_processed + len(validated_calls) > self.max_tool_iterations:
+                    return self._error("The request needed too many consecutive tool calls. Please make it more specific.", session_id)
+                tool_calls_processed += len(validated_calls)
+
+                state_changing = next(
+                    (item for item in validated_calls if requires_approval(item[1].risk_level)),
+                    None,
+                )
+                if state_changing:
+                    _, tool, arguments, call_id = state_changing
                     pending = self._create_pending_action(
                         tool.name,
                         arguments,
@@ -192,7 +232,7 @@ class VaultAIAgent:
                         tool.reason,
                         session_id,
                         reply.interaction_id,
-                        reply.call_id,
+                        call_id,
                     )
                     self._remember(session_id, reply.interaction_id)
                     self.audit_log.record(
@@ -214,25 +254,37 @@ class VaultAIAgent:
                         "session_id": session_id,
                     }
 
-                result = self.tools.validate_and_execute(tool.name, arguments)
-                grounded_by_tool = True
-                self.audit_log.record(
-                    session_id=session_id,
-                    user_request=message,
-                    tool=tool.name,
-                    arguments=arguments,
-                    risk_level=tool.risk_level.value,
-                    approval_status="NOT_REQUIRED",
-                    execution_status="SUCCESS",
-                    result_summary=result,
-                )
-                reply = self.model.submit_tool_result(
-                    tool_name=tool.name,
-                    call_id=reply.call_id,
-                    result=result,
-                    interaction_id=reply.interaction_id,
-                    tools=self.tools.declarations(),
-                )
+                tool_results: list[dict[str, Any]] = []
+                for _, tool, arguments, call_id in validated_calls:
+                    result = self.tools.validate_and_execute(tool.name, arguments)
+                    grounded_by_tool = True
+                    self.audit_log.record(
+                        session_id=session_id,
+                        user_request=message,
+                        tool=tool.name,
+                        arguments=arguments,
+                        risk_level=tool.risk_level.value,
+                        approval_status="NOT_REQUIRED",
+                        execution_status="SUCCESS",
+                        result_summary=result,
+                    )
+                    tool_results.append({"name": tool.name, "call_id": call_id, "result": result})
+
+                if len(tool_results) == 1:
+                    item = tool_results[0]
+                    reply = self.model.submit_tool_result(
+                        tool_name=item["name"],
+                        call_id=item["call_id"],
+                        result=item["result"],
+                        interaction_id=reply.interaction_id,
+                        tools=self.tools.declarations(),
+                    )
+                else:
+                    reply = self.model.submit_tool_results(
+                        results=tool_results,
+                        interaction_id=reply.interaction_id,
+                        tools=self.tools.declarations(),
+                    )
             return self._error("The request needed too many consecutive tool calls. Please make it more specific.", session_id)
         except LookupError as exc:
             self.audit_log.record(session_id=session_id, user_request=message, status="unknown_tool", error=str(exc))
@@ -260,9 +312,16 @@ class VaultAIAgent:
         self.audit_log.record(action_id=action_id, tool=tool.name, arguments=arguments, risk_level=tool.risk_level.value, approval_status="APPROVED")
         try:
             result = self.tools.validate_and_execute(tool.name, arguments)
-            self._update_action(approved.model_copy(update={"status": ActionStatus.EXECUTED}))
-            self.audit_log.record(action_id=action_id, tool=tool.name, approval_status="APPROVED", execution_status="SUCCESS", result_summary=result)
-            message = self._success_message(tool.name, result)
+            verification_succeeded = True
+            if tool.name == "repair_replica":
+                verification = self._verify_repair(arguments["object_id"])
+                result = {**result, "verification": verification}
+                verification_succeeded = verification["success"]
+            final_status = ActionStatus.EXECUTED if verification_succeeded else ActionStatus.FAILED
+            self._update_action(approved.model_copy(update={"status": final_status}))
+            execution_status = "SUCCESS" if verification_succeeded else "VERIFICATION_FAILED"
+            self.audit_log.record(action_id=action_id, tool=tool.name, approval_status="APPROVED", execution_status=execution_status, result_summary=result)
+            message = self._repair_message(result) if tool.name == "repair_replica" else self._success_message(tool.name, result)
             try:
                 reply = self.model.submit_tool_result(
                     tool_name=tool.name,
@@ -272,12 +331,13 @@ class VaultAIAgent:
                     tools=self.tools.declarations(),
                 )
                 self._remember(approved.session_id or "", reply.interaction_id)
-                message = reply.text.strip() or message
+                if tool.name != "repair_replica" or verification_succeeded:
+                    message = reply.text.strip() or message
             except Exception:
                 logger.exception("Vault operation succeeded but Gemini could not format the result")
             return {
                 "type": "tool_result",
-                "success": True,
+                "success": verification_succeeded,
                 "tool": tool.name,
                 "result": result,
                 "message": message,
@@ -362,6 +422,43 @@ class VaultAIAgent:
         if tool_name == "rebalance_storage":
             return "Storage rebalancing completed."
         return f"{tool_name.replace('_', ' ').capitalize()} completed successfully."
+
+    def _verify_repair(self, object_id: str) -> dict[str, Any]:
+        metadata = self.tools.validate_and_execute("get_object_metadata", {"object_id": object_id})
+        integrity = self.tools.validate_and_execute("verify_integrity", {"object_id": object_id})
+        required = metadata["replication_factor"]
+        healthy = metadata["healthy_replica_count"]
+        success = (
+            metadata["status"] == "healthy"
+            and healthy >= required
+            and integrity["integrity_status"] == "healthy"
+            and not integrity["corrupted_replicas"]
+        )
+        return {
+            "success": success,
+            "object_id": object_id,
+            "status": metadata["status"],
+            "healthy_replica_count": healthy,
+            "required_replica_count": required,
+            "replica_locations": metadata["active_replica_locations"],
+            "integrity_status": integrity["integrity_status"],
+            "missing_replica_count": metadata["missing_replica_count"],
+        }
+
+    @staticmethod
+    def _repair_message(result: dict[str, Any]) -> str:
+        verification = result["verification"]
+        if not verification["success"]:
+            return (
+                f"Repair was attempted for {verification['object_id']}, but verification found "
+                f"{verification['healthy_replica_count']} of {verification['required_replica_count']} "
+                "healthy replicas. The object remains degraded."
+            )
+        return (
+            f"Replica repair verified: {verification['object_id']} is healthy with "
+            f"{verification['healthy_replica_count']} of {verification['required_replica_count']} "
+            f"required replicas; integrity is {verification['integrity_status']}."
+        )
 
     @staticmethod
     def _error(message: str, session_id: str) -> dict[str, Any]:

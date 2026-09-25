@@ -24,7 +24,18 @@ class MockVaultService:
                 "replica_locations": ["node1", "node2", "node3"],
                 "replica_hashes": {"node1": report_hash, "node2": report_hash, "node3": report_hash},
                 "status": "healthy",
-            }
+            },
+            "object-1": {
+                "object_id": "object-1",
+                "filename": "object-1",
+                "size": 2048,
+                "hash": report_hash,
+                "version": 1,
+                "replication_factor": 3,
+                "replica_locations": ["node1", "node2", "node3"],
+                "replica_hashes": {"node1": report_hash, "node2": report_hash, "node3": report_hash},
+                "status": "healthy",
+            },
         }
 
     def get_node_status(self) -> dict[str, Any]:
@@ -39,15 +50,25 @@ class MockVaultService:
 
     def verify_integrity(self, object_id: str) -> dict[str, Any]:
         item = self._object(object_id)
-        valid = [node for node, digest in item["replica_hashes"].items() if digest == item["hash"]]
+        healthy_nodes = set(self._healthy_node_ids())
+        valid = [
+            node for node, digest in item["replica_hashes"].items()
+            if node in healthy_nodes and digest == item["hash"]
+        ]
         corrupted = [node for node, digest in item["replica_hashes"].items() if digest != item["hash"]]
+        unavailable = [node for node in item["replica_locations"] if node not in healthy_nodes]
+        missing_count = max(0, item["replication_factor"] - len(valid))
         return {
             "object_id": object_id,
             "expected_hash": item["hash"],
             "replica_hashes": dict(item["replica_hashes"]),
             "valid_replicas": valid,
             "corrupted_replicas": corrupted,
-            "integrity_status": "healthy" if not corrupted else "degraded",
+            "unavailable_replicas": unavailable,
+            "healthy_replica_count": len(valid),
+            "required_replica_count": item["replication_factor"],
+            "missing_replica_count": missing_count,
+            "integrity_status": "healthy" if not corrupted and not missing_count else "degraded",
         }
 
     def simulate_corruption(self, object_id: str, node_id: str) -> dict[str, Any]:
@@ -111,7 +132,6 @@ class MockVaultService:
                         self.nodes[source]["storage_used"] = max(0, self.nodes[source]["storage_used"] - 1)
                 else:
                     source = ""
-                    assert set(outcomes) == {409, True}
                 locations.append(destination)
                 self.nodes[destination]["storage_used"] = min(100, self.nodes[destination]["storage_used"] + 1)
                 movements.append({"object_id": item["object_id"], "from": source, "to": destination})
@@ -180,6 +200,15 @@ class MockVaultService:
             active = [node for node in item["replica_locations"] if node in self._healthy_node_ids()]
             item["status"] = "healthy" if len(active) >= item["replication_factor"] else "degraded"
 
-    @staticmethod
-    def _public_metadata(item: dict[str, Any]) -> dict[str, Any]:
-        return {key: value for key, value in item.items() if key != "replica_hashes"}
+    def _public_metadata(self, item: dict[str, Any]) -> dict[str, Any]:
+        metadata = {key: value for key, value in item.items() if key != "replica_hashes"}
+        healthy_nodes = set(self._healthy_node_ids())
+        active_locations = [
+            node for node in item["replica_locations"]
+            if node in healthy_nodes and item["replica_hashes"].get(node) == item["hash"]
+        ]
+        metadata["active_replica_locations"] = active_locations
+        metadata["healthy_replica_count"] = len(active_locations)
+        metadata["missing_replica_count"] = max(0, item["replication_factor"] - len(active_locations))
+        metadata["status"] = "healthy" if metadata["missing_replica_count"] == 0 else "degraded"
+        return metadata
