@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import { ObjectDTO, SelectionState } from '../state/types';
-import { BaseColors } from '../design/tokens';
+import { BaseColors, StateColors } from '../design/tokens';
 import { Database, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 
 interface ObjectsCatalogProps {
@@ -27,7 +27,7 @@ export const ObjectsCatalogDrawer: React.FC<ObjectsCatalogProps> = ({
         left: '12px',
         bottom: '50px',
         width: isOpen ? '260px' : '36px',
-        background: 'rgba(13, 19, 31, 0.92)',
+        background: BaseColors.surfaceElevated,
         backdropFilter: 'blur(8px)',
         border: `1px solid ${BaseColors.border}`,
         borderRadius: '4px',
@@ -55,7 +55,7 @@ export const ObjectsCatalogDrawer: React.FC<ObjectsCatalogProps> = ({
         onClick={() => setIsOpen(!isOpen)}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-          <Database size={14} color="#38bdf8" />
+          <Database size={14} color={StateColors.HEALTHY} />
           {isOpen && (
             <span style={{ fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap' }}>
               CATALOG ({objects.length})
@@ -87,14 +87,14 @@ export const ObjectsCatalogDrawer: React.FC<ObjectsCatalogProps> = ({
                   style={{
                     padding: '8px',
                     marginBottom: '4px',
-                    background: isSelected ? 'rgba(56, 189, 248, 0.15)' : '#090d16',
-                    border: `1px solid ${isSelected ? '#38bdf8' : BaseColors.border}`,
+                    background: isSelected ? `${StateColors.HEALTHY}20` : BaseColors.surface,
+                    border: `1px solid ${isSelected ? StateColors.HEALTHY : BaseColors.border}`,
                     borderRadius: '3px',
                     cursor: 'pointer',
                     fontSize: '11px',
                   }}
                 >
-                  <div style={{ fontWeight: 600, color: isSelected ? '#ffffff' : '#e2e8f0', wordBreak: 'break-all' }}>
+                  <div style={{ fontWeight: 600, color: isSelected ? BaseColors.textPrimary : BaseColors.textSecondary, wordBreak: 'break-all' }}>
                     {obj.key}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: BaseColors.textMuted, fontSize: '10px', marginTop: '3px' }}>

@@ -98,8 +98,8 @@ export const StorageNodeChassis: React.FC<StorageNodeProps> = ({
             <mesh position={[0.16, 0, 0.015]}>
               <boxGeometry args={[0.04, 0.08, 0.01]} />
               <meshStandardMaterial
-                color={hasChunk && !isOffline ? '#38bdf8' : '#334155'}
-                emissive={hasChunk && !isOffline ? '#38bdf8' : '#000000'}
+                color={hasChunk && !isOffline ? StateColors.HEALTHY : BaseColors.borderHover}
+                emissive={hasChunk && !isOffline ? StateColors.HEALTHY : BaseColors.bg}
                 emissiveIntensity={hasChunk && !isOffline ? 0.8 : 0}
               />
             </mesh>
@@ -130,7 +130,7 @@ export const StorageNodeChassis: React.FC<StorageNodeProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            background: isSelected ? 'rgba(15, 23, 42, 0.95)' : 'rgba(10, 15, 26, 0.85)',
+            background: isSelected ? BaseColors.surfaceCard : BaseColors.surface,
             border: `1px solid ${isSelected ? stateColor : BaseColors.border}`,
             padding: '3px 8px',
             borderRadius: '3px',
@@ -155,7 +155,7 @@ export const StorageNodeChassis: React.FC<StorageNodeProps> = ({
           <span style={{ color: BaseColors.textMuted }}>•</span>
           <span style={{ color: BaseColors.textSecondary }}>{chunkCount} chk</span>
           {node.rtt_ms > 0 && !isOffline && (
-            <span style={{ color: '#38bdf8', fontSize: '10px' }}>
+            <span style={{ color: StateColors.HEALTHY, fontSize: '10px' }}>
               {node.rtt_ms.toFixed(1)}ms
             </span>
           )}

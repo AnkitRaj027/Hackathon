@@ -78,6 +78,7 @@ func main() {
 	// REST & 3D Operations Console Gateway
 	httpGateway := coordinator.NewHTTPGateway(coordService, pool)
 	httpGateway.SetRing(placementStrategy)
+	httpGateway.SetRepairManager(repairMgr)
 
 	if ring != nil {
 		if ecPipeline, ecErr := erasure.NewPipeline(2, 1, pool, ring); ecErr == nil {

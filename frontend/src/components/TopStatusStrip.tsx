@@ -23,7 +23,7 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
     <header
       style={{
         height: '46px',
-        background: 'rgba(10, 15, 26, 0.92)',
+        background: BaseColors.bg,
         backdropFilter: 'blur(8px)',
         borderBottom: `1px solid ${BaseColors.border}`,
         display: 'flex',
@@ -43,8 +43,8 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
       {/* Brand & Cluster Identity */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, letterSpacing: '0.08em' }}>
-          <Shield size={16} color="#38bdf8" />
-          <span style={{ fontSize: '14px', color: '#f8fafc' }}>VAULT</span>
+          <Shield size={16} color={StateColors.HEALTHY} />
+          <span style={{ fontSize: '14px', color: BaseColors.textPrimary }}>VAULT</span>
           <span style={{ fontSize: '10px', color: BaseColors.textMuted, border: `1px solid ${BaseColors.border}`, padding: '1px 5px', borderRadius: '2px' }}>
             OPERATIONS
           </span>
@@ -124,7 +124,7 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
         <button
           onClick={onOpenUpload}
           style={{
-            background: '#0284c7',
+            background: BaseColors.accent,
             border: 'none',
             color: '#ffffff',
             padding: '5px 12px',

@@ -2,8 +2,9 @@
 // Section 70 & 71: High-stakes operational confirmation for destructive chaos actions.
 
 import React from 'react';
-import { BaseColors } from '../design/tokens';
+import { BaseColors, StateColors, PanelTokens } from '../design/tokens';
 import { AlertTriangle, X } from 'lucide-react';
+import { Modal } from './Modal';
 
 interface ChaosModalProps {
   isOpen: boolean;
@@ -39,15 +40,15 @@ export const ChaosConfirmationModal: React.FC<ChaosModalProps> = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 100,
+        zIndex: PanelTokens.modalZIndex,
         fontFamily: '"IBM Plex Mono", monospace',
       }}
     >
       <div
         style={{
           width: '440px',
-          background: '#0d131f',
-          border: '1px solid #ef4444',
+          background: BaseColors.surface,
+          border: `1px solid ${StateColors.DEAD}`,
           borderRadius: '4px',
           padding: '20px',
           boxShadow: '0 16px 48px rgba(0, 0, 0, 0.8)',
@@ -67,20 +68,20 @@ export const ChaosConfirmationModal: React.FC<ChaosModalProps> = ({
           </button>
         </div>
 
-        <p style={{ fontSize: '13px', lineHeight: 1.5, marginBottom: '14px', color: '#cbd5e1' }}>
+        <p style={{ fontSize: '13px', lineHeight: 1.5, marginBottom: '14px', color: BaseColors.textMuted }}>
           {isKill ? (
             <>
               You are about to terminate storage node{' '}
-              <strong style={{ color: '#f8fafc' }}>{targetId}</strong>. This will cause an abrupt process crash,
+              <strong style={{ color: BaseColors.textPrimary }}>{targetId}</strong>. This will cause an abrupt process crash,
               triggering the Failure Detector to transition the node from{' '}
               <span style={{ color: '#38bdf8' }}>HEALTHY</span> &rarr;{' '}
               <span style={{ color: '#f97316' }}>SUSPECT</span> &rarr;{' '}
-              <span style={{ color: '#ef4444' }}>DEAD</span> and scheduling automatic replica repair sweeps.
+              <span style={{ color: StateColors.DEAD }}>DEAD</span> and scheduling automatic replica repair sweeps.
             </>
           ) : (
             <>
               You are about to inject physical bit-rot corruption into chunk{' '}
-              <strong style={{ color: '#f8fafc' }}>{targetId}</strong> on disk. The storage engine and coordinator
+              <strong style={{ color: BaseColors.textPrimary }}>{targetId}</strong> on disk. The storage engine and coordinator
               scrubbers will detect a cryptographic SHA-256 digest mismatch and failover to surviving replicas.
             </>
           )}

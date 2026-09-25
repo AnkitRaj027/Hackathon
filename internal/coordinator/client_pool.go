@@ -23,6 +23,8 @@ type ClientPool struct {
 
 	metaConn *grpc.ClientConn
 	metaAddr string
+
+	partitioned map[string]bool
 }
 
 // NewClientPool creates a new ClientPool.
@@ -31,7 +33,38 @@ func NewClientPool(metaAddr string, storageAddrs map[string]string) *ClientPool 
 		storageConns: make(map[string]*grpc.ClientConn),
 		storageAddrs: storageAddrs,
 		metaAddr:     metaAddr,
+		partitioned:  make(map[string]bool),
 	}
+}
+
+// SetPartitioned simulates a network partition for a storage node.
+func (p *ClientPool) SetPartitioned(nodeID string, partitioned bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.partitioned == nil {
+		p.partitioned = make(map[string]bool)
+	}
+	p.partitioned[nodeID] = partitioned
+	if partitioned {
+		if conn, ok := p.storageConns[nodeID]; ok {
+			_ = conn.Close()
+			delete(p.storageConns, nodeID)
+		}
+	}
+}
+
+// IsPartitioned checks if a storage node is currently partitioned from the network.
+func (p *ClientPool) IsPartitioned(nodeID string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.partitioned != nil && p.partitioned[nodeID]
+}
+
+// AddStorageNode dynamically registers a new storage node.
+func (p *ClientPool) AddStorageNode(nodeID string, addr string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.storageAddrs[nodeID] = addr
 }
 
 // StorageNodes returns a map of all configured storage node IDs to their addresses.
@@ -73,6 +106,10 @@ func (p *ClientPool) GetStorageClient(nodeID string) (pbStorage.StorageServiceCl
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.partitioned != nil && p.partitioned[nodeID] {
+		return nil, status.Error(codes.Unavailable, fmt.Sprintf("network partition: storage node %s is unreachable", nodeID))
+	}
+
 	if conn, ok := p.storageConns[nodeID]; ok {
 		return pbStorage.NewStorageServiceClient(conn), nil
 	}
@@ -100,6 +137,13 @@ func (p *ClientPool) GetStorageClient(nodeID string) (pbStorage.StorageServiceCl
 
 // CheckStorageNode checks if a storage node is reachable.
 func (p *ClientPool) CheckStorageNode(ctx context.Context, nodeID string) (string, error) {
+	if p.IsPartitioned(nodeID) {
+		p.mu.RLock()
+		addr := p.storageAddrs[nodeID]
+		p.mu.RUnlock()
+		return addr, status.Error(codes.Unavailable, fmt.Sprintf("network partition: storage node %s is unreachable", nodeID))
+	}
+
 	addr, ok := p.storageAddrs[nodeID]
 	if !ok {
 		return "", fmt.Errorf("unknown node: %s", nodeID)

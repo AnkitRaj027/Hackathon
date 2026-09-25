@@ -27,9 +27,9 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ events }) => {
       case 'CHECKSUM_FAILURE':
         return { color: StateColors.CORRUPTED, label: 'CORRUPT' };
       case 'OBJECT_STORED':
-        return { color: '#38bdf8', label: 'PUT' };
+        return { color: StateColors.HEALTHY, label: 'PUT' };
       case 'OBJECT_DELETED':
-        return { color: '#f87171', label: 'DEL' };
+        return { color: StateColors.DEAD, label: 'DEL' };
       default:
         return { color: BaseColors.textMuted, label: 'INFO' };
     }
@@ -43,7 +43,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ events }) => {
         left: 0,
         right: 0,
         height: expanded ? '220px' : '36px',
-        background: 'rgba(10, 15, 26, 0.95)',
+        background: BaseColors.surface,
         backdropFilter: 'blur(8px)',
         borderTop: `1px solid ${BaseColors.border}`,
         display: 'flex',
@@ -70,7 +70,7 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ events }) => {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Activity size={13} color="#38bdf8" />
+          <Activity size={13} color={StateColors.HEALTHY} />
           <span style={{ fontWeight: 600, color: BaseColors.textSecondary }}>OPERATIONAL TIMELINE:</span>
           {latestEvent ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
