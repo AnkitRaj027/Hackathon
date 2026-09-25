@@ -69,6 +69,7 @@ type CoordinatorConfig struct {
 	ReplicationFactor int
 	WriteQuorum       int
 	ReadQuorum        int
+	PlacementStrategy string
 }
 
 // LoadCoordinatorConfig loads coordinator configuration.
@@ -76,6 +77,7 @@ func LoadCoordinatorConfig() (*CoordinatorConfig, error) {
 	listenAddr := getEnv("VAULT_COORDINATOR_GRPC_ADDR", ":50055")
 	httpPort, _ := strconv.Atoi(getEnv("VAULT_COORDINATOR_HTTP_PORT", "8085"))
 	metadataAddr := getEnv("VAULT_METADATA_ADDR", "localhost:50050")
+	placementStrategy := getEnv("VAULT_PLACEMENT_STRATEGY", "consistent_hash")
 
 	chunkSize, err := strconv.ParseInt(getEnv("VAULT_CHUNK_SIZE", "4194304"), 10, 64)
 	if err != nil || chunkSize <= 0 {
@@ -119,6 +121,7 @@ func LoadCoordinatorConfig() (*CoordinatorConfig, error) {
 		ReplicationFactor: rf,
 		WriteQuorum:       wq,
 		ReadQuorum:        rq,
+		PlacementStrategy: placementStrategy,
 	}, nil
 }
 

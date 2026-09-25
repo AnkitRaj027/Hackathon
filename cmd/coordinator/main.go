@@ -52,7 +52,13 @@ func main() {
 	}
 	sort.Strings(nodeIDs)
 
-	placementStrategy, err := placement.NewFixedReplicationPlacement(nodeIDs, cfg.ReplicationFactor)
+	var placementStrategy placement.PlacementStrategy
+	if cfg.PlacementStrategy == "fixed" {
+		placementStrategy, err = placement.NewFixedReplicationPlacement(nodeIDs, cfg.ReplicationFactor)
+	} else {
+		// Phase 3: Consistent Hash Ring with 256 virtual nodes
+		placementStrategy, err = placement.NewConsistentHashRing(nodeIDs, 256, cfg.ReplicationFactor)
+	}
 	if err != nil {
 		logger.Error("failed initializing placement strategy", "error", err)
 		os.Exit(1)
