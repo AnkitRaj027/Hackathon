@@ -1,36 +1,37 @@
 // Vault Typography Tokens
-// Section 48: Information-oriented, high legibility, monospace tabular numbers.
+// All font values centralized — no ad-hoc font sizes scattered in components.
 
 export const FontFamily = {
-  sans: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  mono: '"IBM Plex Mono", "JetBrains Mono", Consolas, Menlo, monospace',
+  mono: '"IBM Plex Mono", "JetBrains Mono", "Fira Code", monospace',
+  sans: '"Inter", "Helvetica Neue", sans-serif',
 } as const;
 
-export const Typography = {
-  fontSans: FontFamily.sans,
-  fontMono: FontFamily.mono,
+export const FontSize = {
+  xxs: '9px',
+  xs: '10px',
+  sm: '11px',
+  md: '12px',
+  lg: '13px',
+  xl: '14px',
+  xxl: '16px',
+} as const;
 
-  // Text sizes
-  sizeXs: '11px',
-  sizeSm: '12px',
-  sizeBase: '13px',
-  sizeMd: '14px',
-  sizeLg: '16px',
-  sizeXl: '20px',
+export const FontWeight = {
+  regular: 400,
+  medium: 500,
+  semibold: 600,
+  bold: 700,
+} as const;
 
-  // Font weights
-  weightRegular: 400,
-  weightMedium: 500,
-  weightSemibold: 600,
-  weightBold: 700,
+export const LineHeight = {
+  tight: 1.2,
+  normal: 1.5,
+  relaxed: 1.75,
+} as const;
 
-  // Line heights
-  leadingTight: 1.2,
-  leadingNormal: 1.4,
-  leadingRelaxed: 1.6,
-
-  // Technical formatting
-  tabularNumbers: {
-    fontVariantNumeric: 'tabular-nums',
-  },
+export const LetterSpacing = {
+  tight: '-0.02em',
+  normal: '0em',
+  wide: '0.04em',
+  wider: '0.08em',
 } as const;

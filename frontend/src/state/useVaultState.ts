@@ -1,5 +1,6 @@
 // Vault Real-Time State Hook
-// Section 81 & 82: Subscribes to backend SSE stream and exposes real operational state.
+// Subscribes to backend SSE stream and exposes real operational state.
+// Never fabricates data — backend is source of truth.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -9,141 +10,279 @@ import {
   TopologyDTO,
   StorageEvent,
   SelectionState,
+  ViewMode,
+  ActiveTransfer,
+  MetricsPoint,
+  RepairTask,
 } from './types';
 
 export function useVaultState() {
+  // ─── Backend State ─────────────────────────────────────────────────────
   const [status, setStatus] = useState<ClusterStatus | null>(null);
   const [nodes, setNodes] = useState<StorageNode[]>([]);
   const [objects, setObjects] = useState<ObjectDTO[]>([]);
   const [topology, setTopology] = useState<TopologyDTO | null>(null);
   const [events, setEvents] = useState<StorageEvent[]>([]);
+  const [metrics, setMetrics] = useState<MetricsPoint[]>([]);
+  const [repairQueue, setRepairQueue] = useState<RepairTask[]>([]);
+
+  // ─── Connection State ──────────────────────────────────────────────────
   const [connected, setConnected] = useState<boolean>(false);
-  const [activeReplication, setActiveReplication] = useState<{
-    id: string;
-    source: string;
-    target: string;
-    chunkId: string;
-  } | null>(null);
+  const [lastConnectedAt, setLastConnectedAt] = useState<string | null>(null);
 
+  // ─── Active Data-Movement Animations ──────────────────────────────────
+  // Only populated when the backend emits a real replication/repair event.
+  const [activeTransfers, setActiveTransfers] = useState<ActiveTransfer[]>([]);
+  // Keep backwards-compat alias for SceneCanvas
+  const activeReplication = activeTransfers[0] ?? null;
+
+  // ─── UI State ─────────────────────────────────────────────────────────
   const [selection, setSelection] = useState<SelectionState>({ type: 'none' });
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('OVERVIEW');
 
-  // Fetch complete cluster snapshot
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ─── Fetch Snapshot ────────────────────────────────────────────────────
   const fetchSnapshot = useCallback(async () => {
     try {
-      const [statusRes, nodesRes, objsRes, topoRes] = await Promise.all([
+      const [statusRes, nodesRes, objsRes, topoRes, metricsRes] = await Promise.all([
         fetch('/api/status').then((r) => (r.ok ? r.json() : null)),
         fetch('/api/nodes').then((r) => (r.ok ? r.json() : [])),
         fetch('/api/objects').then((r) => (r.ok ? r.json() : [])),
         fetch('/api/topology').then((r) => (r.ok ? r.json() : null)),
+        fetch('/api/metrics').then((r) => (r.ok ? r.json() : [])),
       ]);
 
       if (statusRes) setStatus(statusRes);
-      if (nodesRes) setNodes(nodesRes);
-      if (objsRes) setObjects(objsRes);
+      if (Array.isArray(nodesRes)) setNodes(nodesRes);
+      if (Array.isArray(objsRes)) setObjects(objsRes);
       if (topoRes) setTopology(topoRes);
+      if (Array.isArray(metricsRes)) setMetrics(metricsRes);
     } catch (err) {
       console.error('Failed fetching Vault snapshot:', err);
     }
   }, []);
 
-  // Connect to SSE event stream
-  useEffect(() => {
-    fetchSnapshot();
+  // ─── Add / Expire Transfer Animation ──────────────────────────────────
+  const addTransfer = useCallback((transfer: ActiveTransfer) => {
+    setActiveTransfers((prev) => [...prev.filter((t) => t.id !== transfer.id), transfer]);
+    // Auto-expire after 2.5s — keeps UI clean when no completion event arrives
+    setTimeout(() => {
+      setActiveTransfers((prev) => prev.filter((t) => t.id !== transfer.id));
+    }, 2500);
+  }, []);
+
+  const removeTransfer = useCallback((id: string) => {
+    setActiveTransfers((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // ─── Connect SSE ───────────────────────────────────────────────────────
+  const connectSSE = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
 
     const es = new EventSource('/api/events');
     eventSourceRef.current = es;
 
     es.onopen = () => {
       setConnected(true);
+      setLastConnectedAt(new Date().toISOString());
     };
 
     es.onerror = () => {
       setConnected(false);
+      es.close();
+      // Reconnect after 3 s
+      reconnectTimerRef.current = setTimeout(() => connectSSE(), 3000);
     };
 
     es.onmessage = (msg) => {
       try {
         const ev: StorageEvent = JSON.parse(msg.data);
-        setEvents((prev) => [ev, ...prev.slice(0, 99)]);
 
-        // Event-driven state updates
-        if (ev.type === 'NODE_STATE_CHANGED' && ev.payload) {
-          const { node_id, status: newStatus } = ev.payload;
-          setNodes((prev) =>
-            prev.map((n) => (n.id === node_id ? { ...n, status: newStatus } : n))
-          );
-        } else if (ev.type === 'CHUNK_REPLICATED' && ev.payload) {
-          const { target, chunk_id } = ev.payload;
-          setActiveReplication({
-            id: `${Date.now()}-${chunk_id}`,
-            source: 'coordinator',
-            target,
-            chunkId: chunk_id,
-          });
-          setTimeout(() => setActiveReplication(null), 1800);
-          fetchSnapshot();
-        } else if (ev.type === 'REPAIR_STARTED' && ev.payload) {
-          const { source, target, chunk_id } = ev.payload;
-          setActiveReplication({
-            id: `${Date.now()}-${chunk_id}`,
-            source,
-            target,
-            chunkId: chunk_id,
-          });
-        } else if (ev.type === 'REPAIR_COMPLETED') {
-          setTimeout(() => setActiveReplication(null), 800);
-          fetchSnapshot();
-        } else if (ev.type === 'OBJECT_STORED' || ev.type === 'OBJECT_DELETED') {
-          fetchSnapshot();
+        // Prepend to event log (cap at 200 events)
+        setEvents((prev) => [ev, ...prev.slice(0, 199)]);
+
+        // ── Event-driven state mutations (backend is authoritative) ───────
+        switch (ev.type) {
+          case 'NODE_STATE_CHANGED': {
+            const { node_id, status: newStatus } = ev.payload ?? {};
+            if (node_id) {
+              setNodes((prev) =>
+                prev.map((n) => (n.id === node_id ? { ...n, status: newStatus } : n))
+              );
+            }
+            break;
+          }
+
+          case 'NODE_DEAD': {
+            const nodeId = ev.payload?.node_id ?? ev.node_id;
+            if (nodeId) {
+              setNodes((prev) =>
+                prev.map((n) => (n.id === nodeId ? { ...n, status: 'DEAD' } : n))
+              );
+              // Trigger FAILURES view so operator sees it immediately
+              setViewMode('FAILURES');
+            }
+            break;
+          }
+
+          case 'NODE_RECOVERED': {
+            const nodeId = ev.payload?.node_id ?? ev.node_id;
+            if (nodeId) {
+              setNodes((prev) =>
+                prev.map((n) => (n.id === nodeId ? { ...n, status: 'HEALTHY' } : n))
+              );
+            }
+            break;
+          }
+
+          case 'CHUNK_REPLICATED': {
+            const { target, chunk_id } = ev.payload ?? {};
+            if (target && chunk_id) {
+              addTransfer({
+                id: `rep-${chunk_id}-${Date.now()}`,
+                source: 'coordinator',
+                target,
+                chunkId: chunk_id,
+                isRepair: false,
+                startedAt: performance.now(),
+              });
+            }
+            fetchSnapshot();
+            break;
+          }
+
+          case 'REPAIR_QUEUED': {
+            const { chunk_id, object_key, source, target } = ev.payload ?? {};
+            if (chunk_id) {
+              const task: RepairTask = {
+                id: `repair-${chunk_id}`,
+                chunk_id,
+                object_key: object_key ?? 'unknown',
+                source: source ?? 'N/A',
+                target: target ?? 'N/A',
+                status: 'QUEUED',
+                rf_current: ev.payload?.rf_current ?? 0,
+                rf_target: ev.payload?.rf_target ?? 3,
+                started_at: ev.timestamp,
+              };
+              setRepairQueue((prev) => {
+                const filtered = prev.filter((t) => t.id !== task.id);
+                return [task, ...filtered];
+              });
+            }
+            break;
+          }
+
+          case 'REPAIR_STARTED': {
+            const { source, target, chunk_id } = ev.payload ?? {};
+            if (chunk_id) {
+              // Update repair queue entry
+              setRepairQueue((prev) =>
+                prev.map((t) =>
+                  t.chunk_id === chunk_id
+                    ? { ...t, status: 'REPAIRING', source: source ?? t.source, target: target ?? t.target }
+                    : t
+                )
+              );
+              // Spawn particle
+              if (source && target) {
+                addTransfer({
+                  id: `repair-${chunk_id}-${Date.now()}`,
+                  source,
+                  target,
+                  chunkId: chunk_id,
+                  isRepair: true,
+                  startedAt: performance.now(),
+                });
+              }
+              setViewMode('REPAIRS');
+            }
+            break;
+          }
+
+          case 'REPAIR_COMPLETED': {
+            const { chunk_id } = ev.payload ?? {};
+            if (chunk_id) {
+              setRepairQueue((prev) =>
+                prev.map((t) =>
+                  t.chunk_id === chunk_id
+                    ? { ...t, status: 'COMPLETED', completed_at: ev.timestamp }
+                    : t
+                )
+              );
+              // Remove particle
+              setActiveTransfers((prev) =>
+                prev.filter((t) => !t.chunkId.startsWith(chunk_id))
+              );
+            }
+            fetchSnapshot();
+            break;
+          }
+
+          case 'REPAIR_FAILED': {
+            const { chunk_id } = ev.payload ?? {};
+            if (chunk_id) {
+              setRepairQueue((prev) =>
+                prev.map((t) => (t.chunk_id === chunk_id ? { ...t, status: 'FAILED' } : t))
+              );
+            }
+            break;
+          }
+
+          case 'OBJECT_STORED':
+          case 'OBJECT_DELETED':
+          case 'TOPOLOGY_CHANGED':
+          case 'NODE_JOINED':
+            fetchSnapshot();
+            break;
+
+          default:
+            break;
         }
       } catch (err) {
         console.error('Error parsing SSE event:', err);
       }
     };
+  }, [fetchSnapshot, addTransfer]);
 
-    // Periodic poll fallback for node latencies (every 10s)
+  // ─── Bootstrap ────────────────────────────────────────────────────────
+  useEffect(() => {
+    fetchSnapshot();
+    connectSSE();
+
+    // Periodic node poll fallback (every 10 s) for RTT updates
     const pollInterval = setInterval(() => {
       fetch('/api/nodes')
         .then((r) => r.json())
-        .then((data) => {
-          if (Array.isArray(data)) setNodes(data);
-        })
+        .then((data) => { if (Array.isArray(data)) setNodes(data); })
         .catch(() => {});
     }, 10000);
 
     return () => {
       clearInterval(pollInterval);
-      es.close();
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      eventSourceRef.current?.close();
     };
-  }, [fetchSnapshot]);
+  }, [fetchSnapshot, connectSSE]);
 
-  // Chaos controls
+  // ─── Chaos Controls (real backend operations) ──────────────────────────
   const killNode = async (nodeId: string) => {
-    const res = await fetch(`/api/admin/nodes/${nodeId}/kill`, {
-      method: 'POST',
-    });
-    if (!res.ok) {
-      throw new Error(`Failed killing node: ${res.statusText}`);
-    }
+    const res = await fetch(`/api/admin/nodes/${nodeId}/kill`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed killing node: ${res.statusText}`);
   };
 
   const corruptChunk = async (chunkId: string) => {
-    const res = await fetch(`/api/admin/chunks/${chunkId}/corrupt`, {
-      method: 'POST',
-    });
-    if (!res.ok) {
-      throw new Error(`Failed corrupting chunk: ${res.statusText}`);
-    }
+    const res = await fetch(`/api/admin/chunks/${chunkId}/corrupt`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed corrupting chunk: ${res.statusText}`);
   };
 
   const deleteObject = async (key: string) => {
-    const res = await fetch(`/api/objects/${encodeURIComponent(key)}`, {
-      method: 'DELETE',
-    });
-    if (!res.ok) {
-      throw new Error(`Failed deleting object: ${res.statusText}`);
-    }
+    const res = await fetch(`/api/objects/${encodeURIComponent(key)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`Failed deleting object: ${res.statusText}`);
     setSelection({ type: 'none' });
     fetchSnapshot();
   };
@@ -154,10 +293,7 @@ export function useVaultState() {
     formData.append('key', key || file.name);
     formData.append('scheme', scheme);
 
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    });
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
     if (!res.ok) {
       const errText = await res.text();
       throw new Error(errText || 'Upload failed');
@@ -171,15 +307,26 @@ export function useVaultState() {
   };
 
   return {
+    // Backend state
     status,
     nodes,
     objects,
     topology,
     events,
+    metrics,
+    repairQueue,
+    // Connection
     connected,
+    lastConnectedAt,
+    // Animation
+    activeTransfers,
     activeReplication,
+    // UI
     selection,
     setSelection,
+    viewMode,
+    setViewMode,
+    // Actions
     killNode,
     corruptChunk,
     deleteObject,

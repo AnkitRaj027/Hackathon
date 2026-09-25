@@ -1,30 +1,45 @@
 // TopStatusStrip Component
-// Section 67: Minimal technical status strip for high operational scanability.
+// Minimal operational status bar — compact, information-dense.
+// All values come from real backend state.
 
 import React from 'react';
-import { ClusterStatus } from '../state/types';
+import { ClusterStatus, MetricsPoint } from '../state/types';
 import { BaseColors, StateColors } from '../design/tokens';
+import { FontFamily, FontSize, FontWeight } from '../design/typography';
 import { Shield, Upload, RefreshCw, Radio } from 'lucide-react';
 
 interface TopStatusStripProps {
   status: ClusterStatus | null;
   connected: boolean;
+  metrics: MetricsPoint[];
   onOpenUpload: () => void;
   onRefresh: () => void;
 }
 
+const clusterStatusColor = (s: string | undefined): string => {
+  if (!s) return StateColors.STALE;
+  if (s === 'HEALTHY') return StateColors.HEALTHY;
+  if (s === 'DEGRADED') return StateColors.DEGRADED;
+  return StateColors.DEAD;
+};
+
 export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
   status,
   connected,
+  metrics,
   onOpenUpload,
   onRefresh,
 }) => {
+  // Latest metrics point — only show if backend has real data
+  const latest = metrics.length > 0 ? metrics[metrics.length - 1] : null;
+
+  const statusColor = clusterStatusColor(status?.status);
+
   return (
     <header
       style={{
         height: '46px',
         background: BaseColors.bg,
-        backdropFilter: 'blur(8px)',
         borderBottom: `1px solid ${BaseColors.border}`,
         display: 'flex',
         alignItems: 'center',
@@ -35,67 +50,111 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
         left: 0,
         right: 0,
         zIndex: 50,
-        fontFamily: '"IBM Plex Mono", monospace',
-        fontSize: '12px',
+        fontFamily: FontFamily.mono,
+        fontSize: FontSize.md,
         color: BaseColors.textPrimary,
       }}
     >
-      {/* Brand & Cluster Identity */}
+      {/* Brand */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, letterSpacing: '0.08em' }}>
-          <Shield size={16} color={StateColors.HEALTHY} />
-          <span style={{ fontSize: '14px', color: BaseColors.textPrimary }}>VAULT</span>
-          <span style={{ fontSize: '10px', color: BaseColors.textMuted, border: `1px solid ${BaseColors.border}`, padding: '1px 5px', borderRadius: '2px' }}>
-            OPERATIONS
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontWeight: FontWeight.bold,
+            letterSpacing: '0.08em',
+          }}
+        >
+          <Shield size={15} color={StateColors.HEALTHY} />
+          <span style={{ fontSize: FontSize.xl, color: BaseColors.textPrimary }}>VAULT</span>
+          <span
+            style={{
+              fontSize: FontSize.xxs,
+              color: BaseColors.textMuted,
+              border: `1px solid ${BaseColors.border}`,
+              padding: '1px 5px',
+              borderRadius: '2px',
+            }}
+          >
+            DISTRIBUTED STORAGE
           </span>
         </div>
 
         <div style={{ width: '1px', height: '18px', background: BaseColors.border }} />
 
-        {/* Live Cluster Status */}
+        {/* Cluster health indicator */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span
             style={{
               width: '7px',
               height: '7px',
               borderRadius: '50%',
-              background: status?.status === 'HEALTHY' ? StateColors.HEALTHY : StateColors.DEAD,
-              boxShadow: `0 0 8px ${status?.status === 'HEALTHY' ? StateColors.HEALTHY : StateColors.DEAD}`,
+              background: statusColor,
+              boxShadow: `0 0 8px ${statusColor}`,
+              transition: 'background 300ms ease, box-shadow 300ms ease',
             }}
           />
-          <span style={{ fontWeight: 600, color: status?.status === 'HEALTHY' ? StateColors.HEALTHY : StateColors.DEAD }}>
+          <span
+            style={{
+              fontWeight: FontWeight.semibold,
+              color: statusColor,
+              transition: 'color 300ms ease',
+            }}
+          >
             {status?.status || 'INITIALIZING'}
           </span>
         </div>
       </div>
 
-      {/* Operational Metrics (Tabular Monospace) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-        <div>
-          <span style={{ color: BaseColors.textMuted, marginRight: '6px' }}>NODES:</span>
-          <span style={{ fontWeight: 600, color: BaseColors.textPrimary }}>
-            {status ? `${status.healthy_nodes}/${status.total_nodes}` : '...'}
-          </span>
-        </div>
+      {/* Live cluster metrics (center) */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '22px',
+          fontSize: FontSize.xs,
+        }}
+      >
+        <Metric label="NODES" value={status ? `${status.healthy_nodes}/${status.total_nodes}` : null} />
+        <Metric label="OBJECTS" value={status ? String(status.active_objects) : null} />
+        <Metric
+          label="TOPOLOGY"
+          value={status ? (status.erasure_coding ? 'RS 2+1' : `RF ${status.replication_factor} · W${status.write_quorum} R${status.read_quorum}`) : null}
+          color={StateColors.HEALTHY}
+        />
+        {latest && (
+          <>
+            <Metric
+              label="WRITE"
+              value={`${latest.write_mbps.toFixed(1)} MB/s`}
+              color={BaseColors.textSecondary}
+            />
+            <Metric
+              label="READ"
+              value={`${latest.read_mbps.toFixed(1)} MB/s`}
+              color={BaseColors.textSecondary}
+            />
+            <Metric
+              label="LATENCY"
+              value={`${latest.avg_latency_ms.toFixed(1)} ms`}
+              color={latest.avg_latency_ms > 50 ? StateColors.SUSPECT : BaseColors.textSecondary}
+            />
+          </>
+        )}
 
-        <div>
-          <span style={{ color: BaseColors.textMuted, marginRight: '6px' }}>TOPOLOGY:</span>
-          <span style={{ fontWeight: 600, color: '#38bdf8' }}>
-            {status?.erasure_coding ? 'RS 2+1 / RF 3' : 'RF 3 (W=3, R=1)'}
-          </span>
-        </div>
-
-        <div>
-          <span style={{ color: BaseColors.textMuted, marginRight: '6px' }}>OBJECTS:</span>
-          <span style={{ fontWeight: 600, color: BaseColors.textPrimary }}>
-            {status?.active_objects ?? 0}
-          </span>
-        </div>
-
-        {/* Real-time SSE Connection Indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: connected ? '#10b981' : '#ef4444' }}>
-          <Radio size={12} />
-          <span>{connected ? 'LIVE SSE' : 'DISCONNECTED'}</span>
+        {/* SSE connection status */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            color: connected ? StateColors.REPAIRING : StateColors.DEAD,
+            fontSize: FontSize.xs,
+          }}
+        >
+          <Radio size={11} />
+          <span>{connected ? 'LIVE' : 'DISCONNECTED'}</span>
         </div>
       </div>
 
@@ -109,15 +168,16 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
             border: `1px solid ${BaseColors.border}`,
             color: BaseColors.textSecondary,
             padding: '4px 8px',
-            borderRadius: '3px',
+            borderRadius: '2px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            fontSize: '11px',
+            fontSize: FontSize.xs,
+            fontFamily: FontFamily.mono,
           }}
         >
-          <RefreshCw size={12} />
+          <RefreshCw size={11} />
           <span>SYNC</span>
         </button>
 
@@ -126,21 +186,43 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
           style={{
             background: BaseColors.accent,
             border: 'none',
-            color: '#ffffff',
+            color: BaseColors.bg,
             padding: '5px 12px',
-            borderRadius: '3px',
+            borderRadius: '2px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            fontWeight: 600,
-            fontSize: '11px',
+            fontWeight: FontWeight.semibold,
+            fontSize: FontSize.xs,
+            fontFamily: FontFamily.mono,
           }}
         >
-          <Upload size={12} />
+          <Upload size={11} />
           <span>INGEST OBJECT</span>
         </button>
       </div>
     </header>
   );
 };
+
+// ─── Reusable inline metric cell ──────────────────────────────────────────
+
+const Metric: React.FC<{ label: string; value: string | null; color?: string }> = ({
+  label,
+  value,
+  color,
+}) => (
+  <div>
+    <span style={{ color: BaseColors.textMuted, marginRight: '5px' }}>{label}:</span>
+    <span
+      style={{
+        fontWeight: FontWeight.semibold,
+        color: color ?? BaseColors.textPrimary,
+        fontVariantNumeric: 'tabular-nums',
+      }}
+    >
+      {value ?? '—'}
+    </span>
+  </div>
+);
