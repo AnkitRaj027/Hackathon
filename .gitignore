@@ -31,3 +31,9 @@ vendor/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# Runtime logs & cluster state
+logs/
+*.log
+cluster_pids.txt
+

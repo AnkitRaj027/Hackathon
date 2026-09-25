@@ -532,3 +532,169 @@ func (s *Service) ListNodes(ctx context.Context, req *pbCoord.ListNodesRequest) 
 
 	return &pbCoord.ListNodesResponse{Nodes: nodes}, nil
 }
+
+// PutData stores an entire byte payload under key, writing chunks and persisting metadata.
+func (s *Service) PutData(ctx context.Context, key string, data []byte) (*pbMeta.ObjectMetadata, error) {
+	if err := metadata.ValidateKey(key); err != nil {
+		return nil, fmt.Errorf("invalid object key: %w", err)
+	}
+
+	chunker := chunking.NewStreamChunker(bytes.NewReader(data), key, s.cfg.ChunkSize)
+	var storedChunks []*pbMeta.ChunkMetadata
+
+	for {
+		chunk, err := chunker.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("chunking error: %w", err)
+		}
+
+		replicas, err := s.placement.PlaceChunk(ctx, placement.ChunkDescriptor{
+			ChunkID:   chunk.ID,
+			ObjectKey: key,
+			Index:     chunk.Index,
+			Size:      chunk.Size,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("placement failed for chunk %s: %w", chunk.ID, err)
+		}
+
+		type writeResult struct {
+			nodeID string
+			err    error
+		}
+		resChan := make(chan writeResult, len(replicas))
+		for _, nodeID := range replicas {
+			go func(nid string) {
+				sc, err := s.pool.GetStorageClient(nid)
+				if err != nil {
+					resChan <- writeResult{nodeID: nid, err: err}
+					return
+				}
+				wCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				resp, err := sc.PutChunk(wCtx, &pbStorage.PutChunkRequest{
+					ChunkId:   chunk.ID,
+					Data:      chunk.Data,
+					Checksum:  chunk.Checksum,
+					ObjectKey: key,
+					Index:     chunk.Index,
+				})
+				if err != nil {
+					resChan <- writeResult{nodeID: nid, err: err}
+					return
+				}
+				if !resp.GetSuccess() {
+					resChan <- writeResult{nodeID: nid, err: fmt.Errorf("rejected: %s", resp.GetErrorMessage())}
+					return
+				}
+				resChan <- writeResult{nodeID: nid, err: nil}
+			}(nodeID)
+		}
+
+		var successfulNodes []string
+		for range replicas {
+			r := <-resChan
+			if r.err == nil {
+				successfulNodes = append(successfulNodes, r.nodeID)
+			}
+		}
+
+		if len(successfulNodes) < s.cfg.WriteQuorum {
+			return nil, fmt.Errorf("write quorum not met for chunk %s: got %d, required %d", chunk.ID, len(successfulNodes), s.cfg.WriteQuorum)
+		}
+
+		storedChunks = append(storedChunks, &pbMeta.ChunkMetadata{
+			ChunkId:   chunk.ID,
+			ObjectKey: key,
+			Index:     chunk.Index,
+			Size:      chunk.Size,
+			Sha256:    chunk.Checksum,
+			Replicas:  successfulNodes,
+		})
+	}
+
+	// Handle empty file
+	if len(storedChunks) == 0 {
+		safeKey := strings.ReplaceAll(strings.ReplaceAll(key, "/", "_"), "\\", "_")
+		chunkID := fmt.Sprintf("%s.chunk.0000", safeKey)
+		emptySHA := checksum.ComputeBytes([]byte{})
+		replicas, err := s.placement.PlaceChunk(ctx, placement.ChunkDescriptor{
+			ChunkID:   chunkID,
+			ObjectKey: key,
+			Index:     0,
+			Size:      0,
+		})
+		if err == nil {
+			var successfulNodes []string
+			for _, nid := range replicas {
+				if sc, cerr := s.pool.GetStorageClient(nid); cerr == nil {
+					_, _ = sc.PutChunk(ctx, &pbStorage.PutChunkRequest{
+						ChunkId:  chunkID,
+						Data:     []byte{},
+						Checksum: emptySHA,
+					})
+					successfulNodes = append(successfulNodes, nid)
+				}
+			}
+			storedChunks = append(storedChunks, &pbMeta.ChunkMetadata{
+				ChunkId:   chunkID,
+				ObjectKey: key,
+				Index:     0,
+				Size:      0,
+				Sha256:    emptySHA,
+				Replicas:  successfulNodes,
+			})
+		}
+	}
+
+	metaClient, err := s.pool.GetMetadataClient()
+	if err != nil {
+		return nil, fmt.Errorf("metadata client unavailable: %w", err)
+	}
+
+	objMeta := &pbMeta.ObjectMetadata{
+		Key:       key,
+		Size:      int64(len(data)),
+		CreatedAt: time.Now().Unix(),
+		Chunks:    storedChunks,
+		CustomMetadata: map[string]string{
+			"checksum": checksum.ComputeBytes(data),
+		},
+	}
+
+	_, err = metaClient.PutObject(ctx, &pbMeta.PutObjectMetadataRequest{Metadata: objMeta})
+	if err != nil {
+		return nil, fmt.Errorf("failed committing metadata: %w", err)
+	}
+	return objMeta, nil
+}
+
+// GetData fetches and verifies all chunks for key and returns reconstructed bytes.
+func (s *Service) GetData(ctx context.Context, key string) ([]byte, error) {
+	metaClient, err := s.pool.GetMetadataClient()
+	if err != nil {
+		return nil, fmt.Errorf("metadata client unavailable: %w", err)
+	}
+
+	objResp, err := metaClient.GetObject(ctx, &pbMeta.GetObjectMetadataRequest{Key: key})
+	if err != nil {
+		return nil, fmt.Errorf("metadata lookup failed: %w", err)
+	}
+	if !objResp.GetFound() {
+		return nil, fmt.Errorf("object %s not found", key)
+	}
+
+	var buf bytes.Buffer
+	for _, chunk := range objResp.GetMetadata().GetChunks() {
+		chunkData, err := s.readChunkWithFailover(ctx, chunk)
+		if err != nil {
+			return nil, fmt.Errorf("failed reading chunk %s: %w", chunk.GetChunkId(), err)
+		}
+		buf.Write(chunkData)
+	}
+	return buf.Bytes(), nil
+}
+

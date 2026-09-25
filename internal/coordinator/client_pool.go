@@ -34,6 +34,17 @@ func NewClientPool(metaAddr string, storageAddrs map[string]string) *ClientPool 
 	}
 }
 
+// StorageNodes returns a map of all configured storage node IDs to their addresses.
+func (p *ClientPool) StorageNodes() map[string]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	res := make(map[string]string, len(p.storageAddrs))
+	for k, v := range p.storageAddrs {
+		res[k] = v
+	}
+	return res
+}
+
 // GetMetadataClient returns a connected MetadataServiceClient.
 func (p *ClientPool) GetMetadataClient() (pbMeta.MetadataServiceClient, error) {
 	p.mu.Lock()

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -15,12 +16,35 @@ type StorageNodeConfig struct {
 	HTTPPort   int
 }
 
-// LoadStorageNodeConfig loads configuration from environment variables with defaults.
+// LoadStorageNodeConfig loads configuration from command-line flags and environment variables.
 func LoadStorageNodeConfig() (*StorageNodeConfig, error) {
-	nodeID := getEnv("VAULT_NODE_ID", "storage-01")
-	dataDir := getEnv("VAULT_DATA_DIR", "./data/"+nodeID)
-	listenAddr := getEnv("VAULT_GRPC_ADDR", ":50051")
-	httpPort, _ := strconv.Atoi(getEnv("VAULT_HTTP_PORT", "8081"))
+	fs := flag.NewFlagSet("storage-node", flag.ContinueOnError)
+	nodeIDFlag := fs.String("id", "", "Node ID")
+	dataDirFlag := fs.String("data", "", "Data directory")
+	listenAddrFlag := fs.String("addr", "", "Listen address")
+	httpPortFlag := fs.Int("http", 0, "HTTP port")
+
+	_ = fs.Parse(os.Args[1:])
+
+	nodeID := *nodeIDFlag
+	if nodeID == "" {
+		nodeID = getEnv("VAULT_NODE_ID", "storage-01")
+	}
+
+	dataDir := *dataDirFlag
+	if dataDir == "" {
+		dataDir = getEnv("VAULT_DATA_DIR", "./data/"+nodeID)
+	}
+
+	listenAddr := *listenAddrFlag
+	if listenAddr == "" {
+		listenAddr = getEnv("VAULT_GRPC_ADDR", ":50051")
+	}
+
+	httpPort := *httpPortFlag
+	if httpPort == 0 {
+		httpPort, _ = strconv.Atoi(getEnv("VAULT_HTTP_PORT", "8081"))
+	}
 
 	if nodeID == "" {
 		return nil, fmt.Errorf("VAULT_NODE_ID must be set")
@@ -43,9 +67,27 @@ type MetadataConfig struct {
 
 // LoadMetadataConfig loads metadata service configuration.
 func LoadMetadataConfig() (*MetadataConfig, error) {
-	listenAddr := getEnv("VAULT_METADATA_GRPC_ADDR", ":50050")
-	httpPort, _ := strconv.Atoi(getEnv("VAULT_METADATA_HTTP_PORT", "8080"))
-	rawEndpoints := getEnv("VAULT_ETCD_ENDPOINTS", "localhost:2379")
+	fs := flag.NewFlagSet("metadata", flag.ContinueOnError)
+	listenAddrFlag := fs.String("addr", "", "Listen address")
+	httpPortFlag := fs.Int("http", 0, "HTTP port")
+	etcdFlag := fs.String("etcd", "", "etcd endpoints")
+
+	_ = fs.Parse(os.Args[1:])
+
+	listenAddr := *listenAddrFlag
+	if listenAddr == "" {
+		listenAddr = getEnv("VAULT_METADATA_GRPC_ADDR", ":50050")
+	}
+
+	httpPort := *httpPortFlag
+	if httpPort == 0 {
+		httpPort, _ = strconv.Atoi(getEnv("VAULT_METADATA_HTTP_PORT", "8080"))
+	}
+
+	rawEndpoints := *etcdFlag
+	if rawEndpoints == "" {
+		rawEndpoints = getEnv("VAULT_ETCD_ENDPOINTS", "localhost:2379")
+	}
 
 	endpoints := strings.Split(rawEndpoints, ",")
 	for i := range endpoints {
@@ -74,9 +116,29 @@ type CoordinatorConfig struct {
 
 // LoadCoordinatorConfig loads coordinator configuration.
 func LoadCoordinatorConfig() (*CoordinatorConfig, error) {
-	listenAddr := getEnv("VAULT_COORDINATOR_GRPC_ADDR", ":50055")
-	httpPort, _ := strconv.Atoi(getEnv("VAULT_COORDINATOR_HTTP_PORT", "8085"))
-	metadataAddr := getEnv("VAULT_METADATA_ADDR", "localhost:50050")
+	fs := flag.NewFlagSet("coordinator", flag.ContinueOnError)
+	listenAddrFlag := fs.String("addr", "", "Listen address")
+	httpPortFlag := fs.Int("http", 0, "HTTP port")
+	metadataAddrFlag := fs.String("metadata", "", "Metadata address")
+	storageNodesFlag := fs.String("storage-nodes", "", "Storage nodes list")
+
+	_ = fs.Parse(os.Args[1:])
+
+	listenAddr := *listenAddrFlag
+	if listenAddr == "" {
+		listenAddr = getEnv("VAULT_COORDINATOR_GRPC_ADDR", ":50055")
+	}
+
+	httpPort := *httpPortFlag
+	if httpPort == 0 {
+		httpPort, _ = strconv.Atoi(getEnv("VAULT_COORDINATOR_HTTP_PORT", "8085"))
+	}
+
+	metadataAddr := *metadataAddrFlag
+	if metadataAddr == "" {
+		metadataAddr = getEnv("VAULT_METADATA_ADDR", "localhost:50050")
+	}
+
 	placementStrategy := getEnv("VAULT_PLACEMENT_STRATEGY", "consistent_hash")
 
 	chunkSize, err := strconv.ParseInt(getEnv("VAULT_CHUNK_SIZE", "4194304"), 10, 64)
@@ -99,7 +161,11 @@ func LoadCoordinatorConfig() (*CoordinatorConfig, error) {
 		rq = 1
 	}
 
-	rawNodes := getEnv("VAULT_STORAGE_NODES", "storage-01=localhost:50051,storage-02=localhost:50052,storage-03=localhost:50053")
+	rawNodes := *storageNodesFlag
+	if rawNodes == "" {
+		rawNodes = getEnv("VAULT_STORAGE_NODES", "storage-01=localhost:50051,storage-02=localhost:50052,storage-03=localhost:50053")
+	}
+
 	storageNodes := make(map[string]string)
 	for _, pair := range strings.Split(rawNodes, ",") {
 		pair = strings.TrimSpace(pair)

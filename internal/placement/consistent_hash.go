@@ -186,3 +186,25 @@ func (c *ConsistentHashRing) NodeCount() int {
 	defer c.mu.RUnlock()
 	return len(c.nodes)
 }
+
+// RingPoint represents a virtual node token position and owner on the ring.
+type RingPoint struct {
+	Token uint32 `json:"token"`
+	Node  string `json:"node"`
+}
+
+// GetRingSnapshot returns the total vnode count and all virtual node token points.
+func (c *ConsistentHashRing) GetRingSnapshot() (int, []RingPoint) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	points := make([]RingPoint, len(c.ring))
+	for i, t := range c.ring {
+		points[i] = RingPoint{
+			Token: t,
+			Node:  c.ringMap[t],
+		}
+	}
+	return c.vnodes, points
+}
+

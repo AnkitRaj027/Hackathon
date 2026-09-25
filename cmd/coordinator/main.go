@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sort"
@@ -15,7 +16,7 @@ import (
 	"vault/internal/config"
 	"vault/internal/coordinator"
 	"vault/internal/detector"
-	"vault/internal/health"
+	"vault/internal/erasure"
 	"vault/internal/logging"
 	"vault/internal/placement"
 	"vault/internal/repair"
@@ -30,7 +31,7 @@ func main() {
 	}
 
 	logger := logging.InitLogger("coordinator", "")
-	logger.Info("starting coordinator service",
+	logger.Info("starting coordinator",
 		"grpc_addr", cfg.ListenAddr,
 		"http_port", cfg.HTTPPort,
 		"metadata_addr", cfg.MetadataAddr,
@@ -40,28 +41,25 @@ func main() {
 		"read_quorum", cfg.ReadQuorum,
 	)
 
-	// Health check server
-	healthServer := health.StartHealthServer(cfg.HTTPPort, "coordinator", "")
-
 	pool := coordinator.NewClientPool(cfg.MetadataAddr, cfg.StorageNodes)
 	defer pool.Close()
 
-	var nodeIDs []string
-	for id := range cfg.StorageNodes {
-		nodeIDs = append(nodeIDs, id)
+	nodeIDs := make([]string, 0, len(cfg.StorageNodes))
+	for nid := range cfg.StorageNodes {
+		nodeIDs = append(nodeIDs, nid)
 	}
 	sort.Strings(nodeIDs)
 
+	// Phase 3: Consistent Hash Ring with 256 virtual nodes per storage node
 	var placementStrategy placement.PlacementStrategy
-	if cfg.PlacementStrategy == "fixed" {
-		placementStrategy, err = placement.NewFixedReplicationPlacement(nodeIDs, cfg.ReplicationFactor)
+	ring, ringErr := placement.NewConsistentHashRing(nodeIDs, 256, cfg.ReplicationFactor)
+	if ringErr != nil {
+		logger.Warn("failed to initialize consistent hash ring, falling back to fixed replication", "error", ringErr)
+		fallback, _ := placement.NewFixedReplicationPlacement(nodeIDs, cfg.ReplicationFactor)
+		placementStrategy = fallback
 	} else {
-		// Phase 3: Consistent Hash Ring with 256 virtual nodes
-		placementStrategy, err = placement.NewConsistentHashRing(nodeIDs, 256, cfg.ReplicationFactor)
-	}
-	if err != nil {
-		logger.Error("failed initializing placement strategy", "error", err)
-		os.Exit(1)
+		placementStrategy = ring
+		logger.Info("consistent hash ring initialized", "nodes", len(nodeIDs), "vnodes_per_node", 256, "rf", cfg.ReplicationFactor)
 	}
 
 	coordService := coordinator.NewService(cfg, pool, placementStrategy)
@@ -76,6 +74,51 @@ func main() {
 	repairMgr := repair.NewManager(pool, failDetector, nodeIDs, cfg.ReplicationFactor, 5*time.Second)
 	repairMgr.Start(context.Background())
 	defer repairMgr.Stop()
+
+	// REST & 3D Operations Console Gateway
+	httpGateway := coordinator.NewHTTPGateway(coordService, pool)
+	httpGateway.SetRing(placementStrategy)
+
+	if ring != nil {
+		if ecPipeline, ecErr := erasure.NewPipeline(2, 1, pool, ring); ecErr == nil {
+			httpGateway.SetErasurePipeline(ecPipeline)
+		}
+	}
+
+	// Wire Failure Detector real-time state changes to console SSE stream
+	failDetector.OnStatusChange(func(nodeID string, oldStatus, newStatus detector.NodeStatus) {
+		httpGateway.Broadcast(coordinator.StorageEvent{
+			Type:      "NODE_STATE_CHANGED",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Payload: map[string]interface{}{
+				"node_id": nodeID,
+				"status":  string(newStatus),
+				"old":     string(oldStatus),
+			},
+		})
+	})
+
+	// Wire Repair Manager events to console SSE stream
+	repairMgr.SetEventCallback(func(event string, chunkID string, srcNode string, targetNode string) {
+		httpGateway.Broadcast(coordinator.StorageEvent{
+			Type:      event,
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Payload: map[string]interface{}{
+				"chunk_id": chunkID,
+				"source":   srcNode,
+				"target":   targetNode,
+			},
+		})
+	})
+
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
+		Handler: httpGateway.Handler(),
+	}
+	go func() {
+		logger.Info("coordinator HTTP REST & Web Console is serving", "port", cfg.HTTPPort)
+		_ = httpServer.ListenAndServe()
+	}()
 
 	lis, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
@@ -107,7 +150,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = healthServer.Shutdown(ctx)
+	_ = httpServer.Shutdown(ctx)
 
 	logger.Info("coordinator stopped")
 }

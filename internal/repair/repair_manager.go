@@ -37,6 +37,9 @@ type RepairStats struct {
 	Duration            time.Duration
 }
 
+// RepairEventCallback receives real-time repair lifecycle notifications.
+type RepairEventCallback func(event string, chunkID string, srcNode string, targetNode string)
+
 // Manager orchestrates background chunk audit sweeps and automatic self-healing replication.
 type Manager struct {
 	clientPool        StorageClientProvider
@@ -45,10 +48,18 @@ type Manager struct {
 	replicationFactor int
 	repairInterval    time.Duration
 
-	mu       sync.Mutex
-	cancel   context.CancelFunc
-	done     chan struct{}
-	inRepair sync.Map // prevents concurrent repairs for the same chunk_id
+	mu            sync.Mutex
+	cancel        context.CancelFunc
+	done          chan struct{}
+	inRepair      sync.Map // prevents concurrent repairs for the same chunk_id
+	eventCallback RepairEventCallback
+}
+
+// SetEventCallback registers a callback for repair lifecycle events.
+func (m *Manager) SetEventCallback(cb RepairEventCallback) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.eventCallback = cb
 }
 
 // NewManager creates a self-healing Repair Manager.
@@ -250,6 +261,7 @@ func (m *Manager) repairChunk(
 	// 2. Fetch chunk from one of the alive source replicas and verify checksum
 	var chunkData []byte
 	var fetchErr error
+	var usedSourceNode string
 
 	for _, sourceNode := range aliveReplicas {
 		sourceClient, err := m.clientPool.GetStorageClient(sourceNode)
@@ -287,6 +299,7 @@ func (m *Manager) repairChunk(
 			// Cryptographic verification
 			if checksum.Verify(chunk.GetSha256(), checksum.ComputeBytes(data)) {
 				chunkData = data
+				usedSourceNode = sourceNode
 				break
 			} else {
 				fetchErr = fmt.Errorf("source node %s chunk failed checksum verification", sourceNode)
@@ -296,6 +309,13 @@ func (m *Manager) repairChunk(
 
 	if chunkData == nil {
 		return "", fmt.Errorf("failed fetching verified chunk from any alive replica: %w", fetchErr)
+	}
+
+	m.mu.Lock()
+	cb := m.eventCallback
+	m.mu.Unlock()
+	if cb != nil {
+		cb("REPAIR_STARTED", chunk.GetChunkId(), usedSourceNode, targetNode)
 	}
 
 	// 3. Write chunk to target node
@@ -319,6 +339,10 @@ func (m *Manager) repairChunk(
 	}
 	if !resp.GetSuccess() {
 		return "", fmt.Errorf("target node %s rejected repaired chunk: %s", targetNode, resp.GetErrorMessage())
+	}
+
+	if cb != nil {
+		cb("REPAIR_COMPLETED", chunk.GetChunkId(), usedSourceNode, targetNode)
 	}
 
 	return targetNode, nil

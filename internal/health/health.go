@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"time"
 )
 
 // Response represents the JSON health status payload.
@@ -24,6 +26,18 @@ func StartHealthServer(port int, serviceName string, nodeID string) *http.Server
 			Service: serviceName,
 			NodeID:  nodeID,
 		})
+	})
+
+	mux.HandleFunc("/admin/kill", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status":  "terminating",
+			"node_id": nodeID,
+		})
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			os.Exit(0)
+		}()
 	})
 
 	server := &http.Server{
