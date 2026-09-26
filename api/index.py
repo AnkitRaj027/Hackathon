@@ -1,5 +1,7 @@
 import os
 import sys
+import time
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +19,7 @@ from backend.ai.config import VAULT_BACKEND_URL
 
 app = create_app()
 
-# Fallback in-memory state for cloud deployments when live coordinator is not running on localhost
+# Full node state with NVMe drive telemetry for cloud deployments
 MOCK_NODES = [
     {
         "id": "node-1",
@@ -31,10 +33,10 @@ MOCK_NODES = [
         "used_space": 42000000000,
         "total_space": 100000000000,
         "drives": [
-            {"bay_index": 0, "status": "HEALTHY", "wear_pct": 12, "chunks_count": 48, "temperature_c": 34},
-            {"bay_index": 1, "status": "HEALTHY", "wear_pct": 14, "chunks_count": 52, "temperature_c": 35},
-            {"bay_index": 2, "status": "HEALTHY", "wear_pct": 10, "chunks_count": 45, "temperature_c": 33},
-            {"bay_index": 3, "status": "HEALTHY", "wear_pct": 9,  "chunks_count": 39, "temperature_c": 33},
+            {"bay_index": 0, "slot": "bay-0", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1612, "temperature_c": 34, "wear_pct": 12, "chunks_count": 48, "chunk_ids": ["chk-weights-00", "chk-ledger-00"]},
+            {"bay_index": 1, "slot": "bay-1", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1740, "temperature_c": 35, "wear_pct": 14, "chunks_count": 52, "chunk_ids": ["chk-weights-03"]},
+            {"bay_index": 2, "slot": "bay-2", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1520, "temperature_c": 33, "wear_pct": 10, "chunks_count": 45, "chunk_ids": []},
+            {"bay_index": 3, "slot": "bay-3", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1390, "temperature_c": 33, "wear_pct": 9,  "chunks_count": 39, "chunk_ids": []},
         ],
     },
     {
@@ -49,10 +51,10 @@ MOCK_NODES = [
         "used_space": 38000000000,
         "total_space": 100000000000,
         "drives": [
-            {"bay_index": 0, "status": "HEALTHY", "wear_pct": 8,  "chunks_count": 41, "temperature_c": 32},
-            {"bay_index": 1, "status": "HEALTHY", "wear_pct": 11, "chunks_count": 46, "temperature_c": 34},
-            {"bay_index": 2, "status": "HEALTHY", "wear_pct": 15, "chunks_count": 50, "temperature_c": 35},
-            {"bay_index": 3, "status": "HEALTHY", "wear_pct": 7,  "chunks_count": 38, "temperature_c": 32},
+            {"bay_index": 0, "slot": "bay-0", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1420, "temperature_c": 32, "wear_pct": 8,  "chunks_count": 41, "chunk_ids": ["chk-weights-00", "chk-weights-01"]},
+            {"bay_index": 1, "slot": "bay-1", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1680, "temperature_c": 34, "wear_pct": 11, "chunks_count": 46, "chunk_ids": ["chk-ledger-00", "chk-weights-03"]},
+            {"bay_index": 2, "slot": "bay-2", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1810, "temperature_c": 35, "wear_pct": 15, "chunks_count": 50, "chunk_ids": []},
+            {"bay_index": 3, "slot": "bay-3", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1350, "temperature_c": 32, "wear_pct": 7,  "chunks_count": 38, "chunk_ids": []},
         ],
     },
     {
@@ -67,10 +69,10 @@ MOCK_NODES = [
         "used_space": 45000000000,
         "total_space": 100000000000,
         "drives": [
-            {"bay_index": 0, "status": "HEALTHY", "wear_pct": 16, "chunks_count": 55, "temperature_c": 36},
-            {"bay_index": 1, "status": "HEALTHY", "wear_pct": 18, "chunks_count": 58, "temperature_c": 37},
-            {"bay_index": 2, "status": "HEALTHY", "wear_pct": 14, "chunks_count": 49, "temperature_c": 35},
-            {"bay_index": 3, "status": "HEALTHY", "wear_pct": 12, "chunks_count": 44, "temperature_c": 34},
+            {"bay_index": 0, "slot": "bay-0", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1550, "temperature_c": 33, "wear_pct": 10, "chunks_count": 44, "chunk_ids": ["chk-weights-00", "chk-weights-01", "chk-weights-02"]},
+            {"bay_index": 1, "slot": "bay-1", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1620, "temperature_c": 34, "wear_pct": 12, "chunks_count": 47, "chunk_ids": ["chk-ledger-01"]},
+            {"bay_index": 2, "slot": "bay-2", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1480, "temperature_c": 33, "wear_pct": 9,  "chunks_count": 42, "chunk_ids": []},
+            {"bay_index": 3, "slot": "bay-3", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1290, "temperature_c": 31, "wear_pct": 6,  "chunks_count": 36, "chunk_ids": []},
         ],
     },
     {
@@ -79,16 +81,16 @@ MOCK_NODES = [
         "status": "HEALTHY",
         "is_partitioned": False,
         "rtt_ms": 1.34,
-        "role": "REPLICA_STORAGE",
+        "role": "PARITY_STORAGE",
         "rack": "rack-beta",
         "zone": "us-east-1b",
         "used_space": 31000000000,
         "total_space": 100000000000,
         "drives": [
-            {"bay_index": 0, "status": "HEALTHY", "wear_pct": 6,  "chunks_count": 35, "temperature_c": 31},
-            {"bay_index": 1, "status": "HEALTHY", "wear_pct": 8,  "chunks_count": 39, "temperature_c": 32},
-            {"bay_index": 2, "status": "HEALTHY", "wear_pct": 9,  "chunks_count": 42, "temperature_c": 33},
-            {"bay_index": 3, "status": "HEALTHY", "wear_pct": 5,  "chunks_count": 30, "temperature_c": 31},
+            {"bay_index": 0, "slot": "bay-0", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1690, "temperature_c": 35, "wear_pct": 13, "chunks_count": 49, "chunk_ids": ["chk-weights-01", "chk-weights-02", "chk-weights-03"]},
+            {"bay_index": 1, "slot": "bay-1", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1730, "temperature_c": 36, "wear_pct": 14, "chunks_count": 51, "chunk_ids": ["chk-ledger-00", "chk-ledger-01"]},
+            {"bay_index": 2, "slot": "bay-2", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1510, "temperature_c": 33, "wear_pct": 11, "chunks_count": 43, "chunk_ids": []},
+            {"bay_index": 3, "slot": "bay-3", "status": "HEALTHY", "model": "NVMe-Enterprise-3.84TB", "capacity_gb": 3840, "used_gb": 1400, "temperature_c": 32, "wear_pct": 8,  "chunks_count": 39, "chunk_ids": []},
         ],
     },
 ]
@@ -138,11 +140,15 @@ def _proxy_or_mock(path: str, fallback_data: Any) -> Any:
 def get_status():
     fallback = {
         "active_objects": len(MOCK_OBJECTS),
-        "coordinator": "vault-control-01",
+        "coordinator": "vault-cloud-controller",
         "erasure_coding": True,
         "healthy_nodes": len([n for n in MOCK_NODES if n["status"] == "HEALTHY"]),
         "total_nodes": len(MOCK_NODES),
         "status": "HEALTHY",
+        "replication_factor": 3,
+        "write_quorum": 2,
+        "read_quorum": 1,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "total_capacity_bytes": 400000000000,
         "used_capacity_bytes": sum(n["used_space"] for n in MOCK_NODES),
     }
@@ -176,7 +182,6 @@ def get_topology():
 
 @app.get("/api/metrics")
 def get_metrics():
-    import time
     now = time.strftime("%H:%M:%S")
     points = [
         {"timestamp": now, "write_mbps": 48.5, "read_mbps": 112.3, "iops": 4120, "avg_latency_ms": 1.25}
@@ -184,18 +189,22 @@ def get_metrics():
     return JSONResponse(content=_proxy_or_mock("/api/metrics", points))
 
 @app.get("/api/events")
-def get_events():
-    def event_stream():
-        import json, time
-        now = time.strftime("%Y-%m-%dT%H:%M:%SZ")
-        init_event = {
-            "type": "NODE_HEARTBEAT",
-            "timestamp": now,
-            "node_id": "node-1",
-            "payload": {"status": "HEALTHY", "rtt_ms": 1.12},
-        }
-        yield f"data: {json.dumps(init_event)}\n\n"
+async def get_events():
+    async def event_stream():
+        # Stream keepalive and node heartbeats
+        for i in range(15):
+            now = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            node_idx = (i % len(MOCK_NODES)) + 1
+            heartbeat = {
+                "type": "NODE_HEARTBEAT",
+                "timestamp": now,
+                "node_id": f"node-{node_idx}",
+                "payload": {"status": "HEALTHY", "rtt_ms": round(1.1 + (i * 0.04), 2)},
+            }
+            yield f"data: {json.dumps(heartbeat)}\n\n"
+            await asyncio.sleep(2)
 
+    import json
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.post("/api/admin/nodes/{node_id}/kill")
@@ -218,7 +227,7 @@ def delete_object(object_key: str):
 
 @app.post("/api/upload")
 async def upload_object(file: UploadFile = File(...), placement: str = Form("full")):
-    import time, hashlib
+    import hashlib
     content = await file.read()
     digest = hashlib.sha256(content).hexdigest()
     new_obj = {

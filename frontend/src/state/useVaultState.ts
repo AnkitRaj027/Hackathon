@@ -103,8 +103,21 @@ export function useVaultState() {
     };
 
     es.onerror = () => {
-      setConnected(false);
       es.close();
+      // On serverless platforms like Vercel, SSE connections cycle after each batch.
+      // Verify with a snapshot probe before marking coordinator disconnected.
+      fetch('/api/status')
+        .then((r) => {
+          if (r.ok) {
+            setConnected(true);
+            setLastConnectedAt(new Date().toISOString());
+          } else {
+            setConnected(false);
+          }
+        })
+        .catch(() => {
+          setConnected(false);
+        });
       // Reconnect after 3 s
       reconnectTimerRef.current = setTimeout(() => connectSSE(), 3000);
     };
@@ -265,13 +278,10 @@ export function useVaultState() {
     fetchSnapshot();
     connectSSE();
 
-    // Periodic node poll fallback (every 10 s) for RTT updates
+    // Periodic snapshot poll (every 6 s) to maintain connection state and real-time telemetry
     const pollInterval = setInterval(() => {
-      fetch('/api/nodes')
-        .then((r) => r.json())
-        .then((data) => { if (Array.isArray(data)) setNodes(data); })
-        .catch(() => {});
-    }, 10000);
+       fetchSnapshot();
+    }, 6000);
 
     return () => {
       clearInterval(pollInterval);
