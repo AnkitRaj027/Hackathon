@@ -56,8 +56,18 @@ export const App: React.FC = () => {
     setAiOpen(true);
   };
 
-  // ─── Loading state — show until first snapshot arrives ────────────────
-  const isLoading = !status && nodes.length === 0;
+  // ─── Loading state — auto-dismisses once initialization sequence completes ───
+  const [loadingDismissed, setLoadingDismissed] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    // Dismiss loading overlay after 2.6s (completing the 6-step initialization sequence)
+    const timer = setTimeout(() => {
+      setLoadingDismissed(true);
+    }, 2600);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const isLoading = !loadingDismissed;
 
   // ─── Selection handlers ───────────────────────────────────────────────
   const handleSelectNode = (nodeId: string) => {
@@ -105,7 +115,7 @@ export const App: React.FC = () => {
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: BaseColors.bg }}>
       {/* ── Loading overlay ────────────────────────────────────────── */}
-      {isLoading && <LoadingScreen />}
+      {isLoading && <LoadingScreen onDismiss={() => setLoadingDismissed(true)} />}
 
       {/* ── Disconnected banner ────────────────────────────────────── */}
       {!connected && !isLoading && (

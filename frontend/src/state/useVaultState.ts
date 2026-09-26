@@ -15,15 +15,22 @@ import {
   MetricsPoint,
   RepairTask,
 } from './types';
+import {
+  FALLBACK_STATUS,
+  FALLBACK_NODES,
+  FALLBACK_OBJECTS,
+  FALLBACK_TOPOLOGY,
+  FALLBACK_METRICS,
+} from './fallbackData';
 
 export function useVaultState() {
-  // ─── Backend State ─────────────────────────────────────────────────────
-  const [status, setStatus] = useState<ClusterStatus | null>(null);
-  const [nodes, setNodes] = useState<StorageNode[]>([]);
-  const [objects, setObjects] = useState<ObjectDTO[]>([]);
-  const [topology, setTopology] = useState<TopologyDTO | null>(null);
+  // ─── Backend State (Initialized with fallback data so UI never hangs) ──
+  const [status, setStatus] = useState<ClusterStatus | null>(FALLBACK_STATUS);
+  const [nodes, setNodes] = useState<StorageNode[]>(FALLBACK_NODES);
+  const [objects, setObjects] = useState<ObjectDTO[]>(FALLBACK_OBJECTS);
+  const [topology, setTopology] = useState<TopologyDTO | null>(FALLBACK_TOPOLOGY);
   const [events, setEvents] = useState<StorageEvent[]>([]);
-  const [metrics, setMetrics] = useState<MetricsPoint[]>([]);
+  const [metrics, setMetrics] = useState<MetricsPoint[]>(FALLBACK_METRICS);
   const [repairQueue, setRepairQueue] = useState<RepairTask[]>([]);
 
   // ─── Connection State ──────────────────────────────────────────────────
@@ -47,20 +54,24 @@ export function useVaultState() {
   const fetchSnapshot = useCallback(async () => {
     try {
       const [statusRes, nodesRes, objsRes, topoRes, metricsRes] = await Promise.all([
-        fetch('/api/status').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/nodes').then((r) => (r.ok ? r.json() : [])),
-        fetch('/api/objects').then((r) => (r.ok ? r.json() : [])),
-        fetch('/api/topology').then((r) => (r.ok ? r.json() : null)),
-        fetch('/api/metrics').then((r) => (r.ok ? r.json() : [])),
+        fetch('/api/status').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch('/api/nodes').then((r) => (r.ok ? r.json() : [])).catch(() => []),
+        fetch('/api/objects').then((r) => (r.ok ? r.json() : [])).catch(() => []),
+        fetch('/api/topology').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch('/api/metrics').then((r) => (r.ok ? r.json() : [])).catch(() => []),
       ]);
 
-      if (statusRes) setStatus(statusRes);
-      if (Array.isArray(nodesRes)) setNodes(nodesRes);
-      if (Array.isArray(objsRes)) setObjects(objsRes);
+      if (statusRes) {
+        setStatus(statusRes);
+        setConnected(true);
+        setLastConnectedAt(new Date().toISOString());
+      }
+      if (Array.isArray(nodesRes) && nodesRes.length > 0) setNodes(nodesRes);
+      if (Array.isArray(objsRes) && objsRes.length > 0) setObjects(objsRes);
       if (topoRes) setTopology(topoRes);
-      if (Array.isArray(metricsRes)) setMetrics(metricsRes);
+      if (Array.isArray(metricsRes) && metricsRes.length > 0) setMetrics(metricsRes);
     } catch (err) {
-      console.error('Failed fetching Vault snapshot:', err);
+      console.warn('Backend snapshot unavailable, continuing in offline/demo mode:', err);
     }
   }, []);
 

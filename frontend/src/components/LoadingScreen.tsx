@@ -15,18 +15,39 @@ const STEPS = [
   'Initializing 3D scene...',
 ];
 
-export const LoadingScreen: React.FC = () => {
+interface LoadingScreenProps {
+  onDismiss?: () => void;
+}
+
+export const LoadingScreen: React.FC<LoadingScreenProps> = ({ onDismiss }) => {
   const [step, setStep] = useState(0);
 
   useEffect(() => {
     const iv = setInterval(() => {
-      setStep((s) => Math.min(s + 1, STEPS.length - 1));
-    }, 420);
-    return () => clearInterval(iv);
-  }, []);
+      setStep((s) => {
+        if (s >= STEPS.length - 1) {
+          clearInterval(iv);
+          if (onDismiss) {
+            setTimeout(onDismiss, 350);
+          }
+          return s;
+        }
+        return s + 1;
+      });
+    }, 400);
+
+    const onKey = () => onDismiss?.();
+    window.addEventListener('keydown', onKey);
+
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onDismiss]);
 
   return (
     <div
+      onClick={() => onDismiss?.()}
       style={{
         position: 'fixed',
         inset: 0,
@@ -37,6 +58,7 @@ export const LoadingScreen: React.FC = () => {
         justifyContent: 'center',
         fontFamily: FontFamily.mono,
         zIndex: 9999,
+        cursor: 'pointer',
       }}
     >
       <div
@@ -122,6 +144,18 @@ export const LoadingScreen: React.FC = () => {
             {s}
           </div>
         ))}
+      </div>
+
+      <div
+        style={{
+          marginTop: '28px',
+          fontSize: FontSize.xs,
+          color: BaseColors.textMuted,
+          opacity: 0.6,
+          letterSpacing: '0.04em',
+        }}
+      >
+        Click anywhere to skip
       </div>
     </div>
   );
