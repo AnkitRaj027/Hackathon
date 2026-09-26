@@ -1,19 +1,21 @@
 // Vault Typography Tokens
-// All font values centralized — no ad-hoc font sizes scattered in components.
+// Standard, professional typography pairing Inter for interface clarity with
+// JetBrains Mono for precision technical data and telemetry.
 
 export const FontFamily = {
-  mono: '"IBM Plex Mono", "JetBrains Mono", "Fira Code", monospace',
-  sans: '"Inter", "Helvetica Neue", sans-serif',
+  sans: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+  mono: '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace',
 } as const;
 
 export const FontSize = {
-  xxs: '9px',
-  xs: '10px',
-  sm: '11px',
-  md: '12px',
-  lg: '13px',
-  xl: '14px',
-  xxl: '16px',
+  xxs: '11px',
+  xs: '12px',
+  sm: '13px',
+  md: '14px',
+  lg: '15px',
+  xl: '17px',
+  xxl: '20px',
+  display: '24px',
 } as const;
 
 export const FontWeight = {
@@ -24,14 +26,14 @@ export const FontWeight = {
 } as const;
 
 export const LineHeight = {
-  tight: 1.2,
+  tight: 1.3,
   normal: 1.5,
-  relaxed: 1.75,
+  relaxed: 1.65,
 } as const;
 
 export const LetterSpacing = {
-  tight: '-0.02em',
+  tight: '-0.015em',
   normal: '0em',
-  wide: '0.04em',
-  wider: '0.08em',
+  wide: '0.025em',
+  wider: '0.05em',
 } as const;

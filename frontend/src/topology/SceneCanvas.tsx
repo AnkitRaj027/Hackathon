@@ -160,7 +160,7 @@ export const SceneCanvas: React.FC<SceneCanvasProps> = ({
 
         {/* Ground reference grid — subtle spatial orientation */}
         <gridHelper
-          args={[60, 60, BaseColors.borderActive, BaseColors.border]}
+          args={[60, 60, '#1c202a', '#10131a']}
           position={[0, -0.5, 0]}
         />
 
@@ -173,22 +173,22 @@ export const SceneCanvas: React.FC<SceneCanvasProps> = ({
           onSelectNode={onSelectNode}
         />
 
-        {/* Coordinator hub at centre */}
+        {/* Coordinator telemetry hub at center */}
         <group position={[0, 0, 0]}>
           <mesh position={[0, 0, 0]}>
-            <cylinderGeometry args={[1.2, 1.4, 0.4, 32]} />
+            <cylinderGeometry args={[1.1, 1.3, 0.35, 32]} />
             <meshStandardMaterial
-              color="#0f172a"
-              metalness={0.8}
-              roughness={0.3}
+              color="#0d1017"
+              metalness={0.7}
+              roughness={0.4}
             />
           </mesh>
-          <mesh position={[0, 0.22, 0]}>
-            <cylinderGeometry args={[0.3, 0.3, 0.08, 16]} />
+          <mesh position={[0, 0.19, 0]}>
+            <cylinderGeometry args={[0.25, 0.25, 0.06, 16]} />
             <meshStandardMaterial
               color={BaseColors.accent}
               emissive={BaseColors.accent}
-              emissiveIntensity={0.8}
+              emissiveIntensity={0.5}
             />
           </mesh>
         </group>

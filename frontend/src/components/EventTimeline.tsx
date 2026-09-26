@@ -227,9 +227,8 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ events }) => {
           bottom: 0,
           left: 0,
           right: 0,
-          height: expanded ? '260px' : '36px',
-          background: BaseColors.surface,
-          backdropFilter: 'blur(8px)',
+          height: expanded ? '260px' : '38px',
+          background: BaseColors.bg,
           borderTop: `1px solid ${BaseColors.border}`,
           display: 'flex',
           flexDirection: 'column',
@@ -237,14 +236,14 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ events }) => {
           fontFamily: FontFamily.mono,
           fontSize: FontSize.sm,
           color: BaseColors.textPrimary,
-          transition: 'height 200ms cubic-bezier(0.2, 0, 0, 1)',
+          transition: 'height 180ms ease',
         }}
       >
         {/* Collapsed Banner */}
         <div
           onClick={() => setExpanded(!expanded)}
           style={{
-            height: '36px',
+            height: '38px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -256,12 +255,13 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ events }) => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Activity size={13} color={StateColors.HEALTHY} />
+            <Activity size={14} color={StateColors.HEALTHY} />
             <span
               style={{
                 fontWeight: FontWeight.semibold,
                 color: BaseColors.textSecondary,
                 letterSpacing: '0.04em',
+                fontSize: FontSize.sm,
               }}
             >
               OPERATIONAL TIMELINE:

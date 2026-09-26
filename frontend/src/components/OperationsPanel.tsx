@@ -59,14 +59,14 @@ const Row: React.FC<{ label: string; value: React.ReactNode; accent?: string }> 
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      padding: '4px 0',
+      padding: '5px 0',
       borderBottom: `1px solid ${BaseColors.bg}`,
     }}
   >
-    <span style={{ fontSize: FontSize.xxs, color: BaseColors.textMuted }}>{label}</span>
+    <span style={{ fontSize: FontSize.xs, color: BaseColors.textMuted }}>{label}</span>
     <span
       style={{
-        fontSize: FontSize.xxs,
+        fontSize: FontSize.sm,
         color: accent ?? BaseColors.textPrimary,
         fontVariantNumeric: 'tabular-nums',
       }}
@@ -104,19 +104,18 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = ({
     <div
       style={{
         position: 'absolute',
-        top: '50px',
+        top: '54px',
         left: '12px',
-        width: '280px',
+        width: '320px',
         bottom: '44px',
         background: BaseColors.surface,
         border: `1px solid ${BaseColors.border}`,
-        borderRadius: '3px',
+        borderRadius: '2px',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 35,
         fontFamily: FontFamily.mono,
         overflow: 'hidden',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
       }}
     >
       {/* ── Integrated Infrastructure Tab Bar ────────────────────────────── */}
@@ -154,16 +153,16 @@ export const OperationsPanel: React.FC<OperationsPanelProps> = ({
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: '3px',
-                fontSize: '9px',
+                fontSize: FontSize.xxs,
                 fontWeight: isActive ? FontWeight.semibold : FontWeight.regular,
-                fontFamily: FontFamily.mono,
+                fontFamily: FontFamily.sans,
                 letterSpacing: '0.04em',
                 position: 'relative',
                 transition: 'background 120ms ease, color 120ms ease',
               }}
             >
               <div style={{ position: 'relative' }}>
-                <Icon size={12} color={isActive ? BaseColors.accent : BaseColors.textMuted} />
+                <Icon size={14} color={isActive ? BaseColors.accent : BaseColors.textMuted} />
                 {hasBadge && (
                   <span
                     style={{

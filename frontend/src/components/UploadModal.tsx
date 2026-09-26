@@ -3,7 +3,8 @@
 
 import React, { useState } from 'react';
 import { BaseColors } from '../design/tokens';
-import { Upload, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { FontFamily, FontSize } from '../design/typography';
+import { Upload, X, AlertCircle } from 'lucide-react';
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -44,42 +45,40 @@ export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onUpl
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(4px)',
+        background: 'rgba(0, 0, 0, 0.72)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 100,
-        fontFamily: '"IBM Plex Mono", monospace',
+        fontFamily: FontFamily.sans,
       }}
     >
       <div
         style={{
-          width: '460px',
-          background: '#0d131f',
+          width: '500px',
+          background: BaseColors.surface,
           border: `1px solid ${BaseColors.border}`,
-          borderRadius: '4px',
-          padding: '20px',
-          boxShadow: '0 16px 48px rgba(0, 0, 0, 0.8)',
+          borderRadius: '2px',
+          padding: '22px',
           color: BaseColors.textPrimary,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontWeight: 700 }}>
-            <Upload size={16} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: BaseColors.accent, fontWeight: 600, fontSize: FontSize.lg }}>
+            <Upload size={17} />
             <span>INGEST OBJECT STREAM</span>
           </div>
           <button
             onClick={onClose}
-            style={{ background: 'transparent', border: 'none', color: BaseColors.textMuted, cursor: 'pointer' }}
+            style={{ background: 'transparent', border: 'none', color: BaseColors.textMuted, cursor: 'pointer', padding: '2px' }}
           >
-            <X size={16} />
+            <X size={17} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '11px', color: BaseColors.textMuted, marginBottom: '5px' }}>
+            <label style={{ display: 'block', fontSize: FontSize.sm, color: BaseColors.textSecondary, marginBottom: '6px', fontWeight: 500 }}>
               SOURCE FILE
             </label>
             <input
@@ -94,18 +93,19 @@ export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onUpl
               }}
               style={{
                 width: '100%',
-                padding: '8px',
-                background: '#090d16',
+                padding: '8px 10px',
+                background: BaseColors.bg,
                 border: `1px solid ${BaseColors.border}`,
-                borderRadius: '3px',
+                borderRadius: '2px',
                 color: BaseColors.textPrimary,
-                fontSize: '11px',
+                fontSize: FontSize.sm,
+                fontFamily: FontFamily.mono,
               }}
             />
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', color: BaseColors.textMuted, marginBottom: '5px' }}>
+            <label style={{ display: 'block', fontSize: FontSize.sm, color: BaseColors.textSecondary, marginBottom: '6px', fontWeight: 500 }}>
               OBJECT KEY / PATH
             </label>
             <input
@@ -116,37 +116,39 @@ export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onUpl
               required
               style={{
                 width: '100%',
-                padding: '8px',
-                background: '#090d16',
+                padding: '8px 12px',
+                background: BaseColors.bg,
                 border: `1px solid ${BaseColors.border}`,
-                borderRadius: '3px',
+                borderRadius: '2px',
                 color: BaseColors.textPrimary,
-                fontSize: '11px',
+                fontSize: FontSize.md,
+                fontFamily: FontFamily.mono,
+                outline: 'none',
               }}
             />
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', color: BaseColors.textMuted, marginBottom: '5px' }}>
+            <label style={{ display: 'block', fontSize: FontSize.sm, color: BaseColors.textSecondary, marginBottom: '6px', fontWeight: 500 }}>
               STORAGE ENCODING SCHEME
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <button
                 type="button"
                 onClick={() => setScheme('replication')}
                 style={{
-                  padding: '10px 8px',
-                  background: scheme === 'replication' ? 'rgba(56, 189, 248, 0.15)' : '#090d16',
-                  border: `1px solid ${scheme === 'replication' ? '#38bdf8' : BaseColors.border}`,
-                  borderRadius: '3px',
-                  color: scheme === 'replication' ? '#38bdf8' : BaseColors.textSecondary,
+                  padding: '10px 12px',
+                  background: scheme === 'replication' ? BaseColors.surfaceElevated : BaseColors.bg,
+                  border: `1px solid ${scheme === 'replication' ? BaseColors.accent : BaseColors.border}`,
+                  borderRadius: '2px',
+                  color: scheme === 'replication' ? BaseColors.accent : BaseColors.textSecondary,
                   cursor: 'pointer',
                   textAlign: 'left',
-                  fontSize: '11px',
+                  fontSize: FontSize.sm,
                 }}
               >
-                <div style={{ fontWeight: 600 }}>3x Full Replication</div>
-                <div style={{ fontSize: '9px', color: BaseColors.textMuted, marginTop: '2px' }}>
+                <div style={{ fontWeight: 600, fontSize: FontSize.sm }}>3x Full Replication</div>
+                <div style={{ fontSize: FontSize.xs, color: BaseColors.textMuted, marginTop: '3px', fontFamily: FontFamily.mono }}>
                   RF=3, W=3, R=1 quorum
                 </div>
               </button>
@@ -155,63 +157,64 @@ export const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose, onUpl
                 type="button"
                 onClick={() => setScheme('erasure')}
                 style={{
-                  padding: '10px 8px',
-                  background: scheme === 'erasure' ? 'rgba(168, 85, 247, 0.15)' : '#090d16',
+                  padding: '10px 12px',
+                  background: scheme === 'erasure' ? BaseColors.surfaceElevated : BaseColors.bg,
                   border: `1px solid ${scheme === 'erasure' ? '#a855f7' : BaseColors.border}`,
-                  borderRadius: '3px',
+                  borderRadius: '2px',
                   color: scheme === 'erasure' ? '#a855f7' : BaseColors.textSecondary,
                   cursor: 'pointer',
                   textAlign: 'left',
-                  fontSize: '11px',
+                  fontSize: FontSize.sm,
                 }}
               >
-                <div style={{ fontWeight: 600 }}>Reed-Solomon (2+1)</div>
-                <div style={{ fontSize: '9px', color: BaseColors.textMuted, marginTop: '2px' }}>
-                  50% storage overhead savings
+                <div style={{ fontWeight: 600, fontSize: FontSize.sm }}>Reed-Solomon (2+1)</div>
+                <div style={{ fontSize: FontSize.xs, color: BaseColors.textMuted, marginTop: '3px', fontFamily: FontFamily.mono }}>
+                  50% storage overhead
                 </div>
               </button>
             </div>
           </div>
 
           {error && (
-            <div style={{ color: '#f87171', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <AlertCircle size={14} />
+            <div style={{ color: '#ef4444', fontSize: FontSize.sm, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <AlertCircle size={15} />
               <span>{error}</span>
             </div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
             <button
               type="button"
               onClick={onClose}
               disabled={uploading}
               style={{
-                padding: '7px 14px',
+                padding: '7px 16px',
                 background: 'transparent',
                 border: `1px solid ${BaseColors.border}`,
                 color: BaseColors.textSecondary,
-                borderRadius: '3px',
+                borderRadius: '2px',
                 cursor: 'pointer',
-                fontSize: '11px',
+                fontSize: FontSize.sm,
+                fontWeight: 500,
               }}
             >
-              CANCEL
+              Cancel
             </button>
             <button
               type="submit"
               disabled={uploading || !file}
               style={{
-                padding: '7px 16px',
-                background: '#0284c7',
+                padding: '7px 18px',
+                background: BaseColors.accent,
                 border: 'none',
-                color: '#ffffff',
-                borderRadius: '3px',
+                color: '#000000',
+                borderRadius: '2px',
                 cursor: uploading ? 'wait' : 'pointer',
-                fontSize: '11px',
+                fontSize: FontSize.sm,
                 fontWeight: 600,
               }}
             >
-              {uploading ? 'STREAMING...' : 'PERSIST OBJECT'}
+              {uploading ? 'Streaming...' : 'Persist Object'}
             </button>
           </div>
         </form>

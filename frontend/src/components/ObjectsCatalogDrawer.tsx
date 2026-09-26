@@ -4,7 +4,8 @@
 import React, { useState } from 'react';
 import { ObjectDTO, SelectionState } from '../state/types';
 import { BaseColors, StateColors } from '../design/tokens';
-import { Database, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { FontFamily, FontSize } from '../design/typography';
+import { Database, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface ObjectsCatalogProps {
   objects: ObjectDTO[];
@@ -23,41 +24,41 @@ export const ObjectsCatalogDrawer: React.FC<ObjectsCatalogProps> = ({
     <div
       style={{
         position: 'absolute',
-        top: '56px',
+        top: '54px',
         left: '12px',
-        bottom: '50px',
-        width: isOpen ? '260px' : '36px',
-        background: BaseColors.surfaceElevated,
-        backdropFilter: 'blur(8px)',
+        bottom: '44px',
+        width: isOpen ? '280px' : '36px',
+        background: BaseColors.surface,
         border: `1px solid ${BaseColors.border}`,
-        borderRadius: '4px',
+        borderRadius: '2px',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 45,
-        fontFamily: '"IBM Plex Mono", monospace',
+        fontFamily: FontFamily.mono,
         color: BaseColors.textPrimary,
-        transition: 'width 180ms cubic-bezier(0.2, 0, 0, 1)',
+        transition: 'width 140ms ease',
         overflow: 'hidden',
       }}
     >
       {/* Header Bar */}
       <div
         style={{
-          height: '36px',
+          height: '40px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '0 10px',
           borderBottom: `1px solid ${BaseColors.border}`,
-          background: 'rgba(10, 15, 26, 0.6)',
+          background: BaseColors.surfaceElevated,
           cursor: 'pointer',
+          userSelect: 'none',
         }}
         onClick={() => setIsOpen(!isOpen)}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-          <Database size={14} color={StateColors.HEALTHY} />
+          <Database size={15} color={BaseColors.accent} />
           {isOpen && (
-            <span style={{ fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: FontSize.sm, fontWeight: 600, fontFamily: FontFamily.sans, letterSpacing: '0.04em' }}>
               CATALOG ({objects.length})
             </span>
           )}
@@ -65,7 +66,7 @@ export const ObjectsCatalogDrawer: React.FC<ObjectsCatalogProps> = ({
         <button
           style={{ background: 'transparent', border: 'none', color: BaseColors.textMuted, cursor: 'pointer', padding: 0 }}
         >
-          {isOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          {isOpen ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
         </button>
       </div>
 
@@ -73,8 +74,8 @@ export const ObjectsCatalogDrawer: React.FC<ObjectsCatalogProps> = ({
       {isOpen && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
           {objects.length === 0 ? (
-            <div style={{ padding: '16px 8px', fontSize: '11px', color: BaseColors.textMuted, textAlign: 'center' }}>
-              No objects stored in cluster. Click <strong>INGEST</strong> above to store files.
+            <div style={{ padding: '16px 8px', fontSize: FontSize.xs, color: BaseColors.textMuted, textAlign: 'center', fontFamily: FontFamily.sans }}>
+              No objects stored. Click <strong>INGEST</strong> above to store files.
             </div>
           ) : (
             objects.map((obj) => {
@@ -85,21 +86,21 @@ export const ObjectsCatalogDrawer: React.FC<ObjectsCatalogProps> = ({
                   key={obj.key}
                   onClick={() => onSelectObject(obj.key)}
                   style={{
-                    padding: '8px',
+                    padding: '6px 8px',
                     marginBottom: '4px',
-                    background: isSelected ? `${StateColors.HEALTHY}20` : BaseColors.surface,
-                    border: `1px solid ${isSelected ? StateColors.HEALTHY : BaseColors.border}`,
-                    borderRadius: '3px',
+                    background: isSelected ? BaseColors.surfaceElevated : 'transparent',
+                    border: `1px solid ${isSelected ? BaseColors.accent : BaseColors.border}`,
+                    borderRadius: '2px',
                     cursor: 'pointer',
-                    fontSize: '11px',
+                    fontSize: FontSize.xs,
                   }}
                 >
-                  <div style={{ fontWeight: 600, color: isSelected ? BaseColors.textPrimary : BaseColors.textSecondary, wordBreak: 'break-all' }}>
+                  <div style={{ fontWeight: 500, color: isSelected ? BaseColors.textPrimary : BaseColors.textSecondary, wordBreak: 'break-all', fontFamily: FontFamily.mono }}>
                     {obj.key}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: BaseColors.textMuted, fontSize: '10px', marginTop: '3px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: BaseColors.textMuted, fontSize: '10px', marginTop: '2px', fontFamily: FontFamily.mono }}>
                     <span>{(obj.size / (1024 * 1024)).toFixed(2)} MB</span>
-                    <span style={{ color: isEC ? '#a855f7' : '#38bdf8' }}>
+                    <span style={{ color: isEC ? '#a855f7' : BaseColors.accent }}>
                       {isEC ? 'RS 2+1' : 'RF 3'}
                     </span>
                   </div>

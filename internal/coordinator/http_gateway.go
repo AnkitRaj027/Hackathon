@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -206,6 +208,20 @@ func (g *HTTPGateway) Handler() http.Handler {
 	// S3-Compatible API Gateway
 	mux.HandleFunc("/s3", cors(g.handleS3Root))
 	mux.HandleFunc("/s3/", cors(g.handleS3Request))
+
+	// AI Assistant Control Plane Proxy (routes /api/ai/ to Python backend on port 8000)
+	aiProxyURL, _ := url.Parse("http://127.0.0.1:8000")
+	aiProxy := httputil.NewSingleHostReverseProxy(aiProxyURL)
+	aiProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": "VAULT AI Agent service is offline on port 8000. Start it with: python -m uvicorn backend.main:app --port 8000",
+		})
+	}
+	mux.HandleFunc("/api/ai/", cors(func(w http.ResponseWriter, r *http.Request) {
+		aiProxy.ServeHTTP(w, r)
+	}))
 
 	// Serve Static Frontend Assets (if built in frontend/dist)
 	distDir := "frontend/dist"
@@ -686,7 +702,17 @@ func (g *HTTPGateway) handleDownload(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if strings.HasPrefix(key, "ec_") && g.ec != nil {
-		data, err = g.ec.GetObjectEC(ctx, key)
+		metaClient, poolErr := g.pool.GetMetadataClient()
+		if poolErr != nil {
+			http.Error(w, "metadata service unreachable: "+poolErr.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		objResp, getErr := metaClient.GetObject(ctx, &pbMeta.GetObjectMetadataRequest{Key: key})
+		if getErr != nil {
+			http.Error(w, "object metadata lookup failed: "+getErr.Error(), http.StatusNotFound)
+			return
+		}
+		data, err = g.ec.GetObjectEC(ctx, objResp.Metadata)
 		if err != nil {
 			http.Error(w, "erasure download failed: "+err.Error(), http.StatusInternalServerError)
 			return

@@ -100,17 +100,16 @@ export const ContextualInspector: React.FC<ContextualInspectorProps> = ({
     <aside
       style={{
         position: 'absolute',
-        top: '56px',
+        top: '54px',
         right: '12px',
-        bottom: '40px',
-        width: '380px',
+        bottom: '44px',
+        width: '400px',
         background: BaseColors.surface,
         border: `1px solid ${BaseColors.border}`,
-        borderRadius: '3px',
+        borderRadius: '2px',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 50,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
         fontFamily: FontFamily.mono,
         color: BaseColors.textPrimary,
         overflow: 'hidden',
@@ -166,7 +165,7 @@ export const ContextualInspector: React.FC<ContextualInspectorProps> = ({
           display: 'flex',
           flexDirection: 'column',
           gap: '14px',
-          fontSize: FontSize.xs,
+          fontSize: FontSize.sm,
         }}
       >
         {/* ── NODE ──────────────────────────────────────────────────── */}

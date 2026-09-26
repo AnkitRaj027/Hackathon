@@ -1,10 +1,10 @@
 // ChaosConfirmationModal Component
-// Section 70 & 71: High-stakes operational confirmation for destructive chaos actions.
+// Section 70 & 71: Operational confirmation for destructive chaos actions.
 
 import React from 'react';
 import { BaseColors, StateColors, PanelTokens } from '../design/tokens';
+import { FontFamily, FontSize } from '../design/typography';
 import { AlertTriangle, X } from 'lucide-react';
-import { Modal } from './Modal';
 
 interface ChaosModalProps {
   isOpen: boolean;
@@ -35,91 +35,89 @@ export const ChaosConfirmationModal: React.FC<ChaosModalProps> = ({
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(4px)',
+        background: 'rgba(0, 0, 0, 0.72)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: PanelTokens.modalZIndex,
-        fontFamily: '"IBM Plex Mono", monospace',
+        fontFamily: FontFamily.sans,
       }}
     >
       <div
         style={{
-          width: '440px',
+          width: '480px',
           background: BaseColors.surface,
-          border: `1px solid ${StateColors.DEAD}`,
-          borderRadius: '4px',
-          padding: '20px',
-          boxShadow: '0 16px 48px rgba(0, 0, 0, 0.8)',
+          border: `1px solid ${BaseColors.border}`,
+          borderRadius: '2px',
+          padding: '22px',
           color: BaseColors.textPrimary,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', fontWeight: 700 }}>
-            <AlertTriangle size={18} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: StateColors.DEAD, fontWeight: 600, fontSize: FontSize.lg }}>
+            <AlertTriangle size={17} />
             <span>CONFIRM DESTRUCTIVE ACTION</span>
           </div>
           <button
             onClick={onCancel}
-            style={{ background: 'transparent', border: 'none', color: BaseColors.textMuted, cursor: 'pointer' }}
+            style={{ background: 'transparent', border: 'none', color: BaseColors.textMuted, cursor: 'pointer', padding: '2px' }}
           >
-            <X size={16} />
+            <X size={17} />
           </button>
         </div>
 
-        <p style={{ fontSize: '13px', lineHeight: 1.5, marginBottom: '14px', color: BaseColors.textMuted }}>
+        <p style={{ fontSize: FontSize.md, lineHeight: 1.6, marginBottom: '20px', color: BaseColors.textSecondary }}>
           {isKill ? (
             <>
               You are about to terminate storage node{' '}
-              <strong style={{ color: BaseColors.textPrimary }}>{targetId}</strong>. This will cause an abrupt process crash,
-              triggering the Failure Detector to transition the node from{' '}
-              <span style={{ color: '#38bdf8' }}>HEALTHY</span> &rarr;{' '}
-              <span style={{ color: '#f97316' }}>SUSPECT</span> &rarr;{' '}
+              <strong style={{ color: BaseColors.textPrimary, fontFamily: FontFamily.mono }}>{targetId}</strong>. This triggers process termination, transitioning node from{' '}
+              <span style={{ color: BaseColors.accent }}>HEALTHY</span> &rarr;{' '}
+              <span style={{ color: StateColors.SUSPECT }}>SUSPECT</span> &rarr;{' '}
               <span style={{ color: StateColors.DEAD }}>DEAD</span> and scheduling automatic replica repair sweeps.
             </>
           ) : (
             <>
               You are about to inject physical bit-rot corruption into chunk{' '}
-              <strong style={{ color: BaseColors.textPrimary }}>{targetId}</strong> on disk. The storage engine and coordinator
-              scrubbers will detect a cryptographic SHA-256 digest mismatch and failover to surviving replicas.
+              <strong style={{ color: BaseColors.textPrimary, fontFamily: FontFamily.mono }}>{targetId}</strong> on disk. The storage engine and coordinator scrubbers will detect a cryptographic SHA-256 digest mismatch and failover to surviving replicas.
             </>
           )}
         </p>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
           <button
             onClick={onCancel}
             disabled={isProcessing}
             style={{
-              padding: '7px 14px',
+              padding: '7px 16px',
               background: 'transparent',
               border: `1px solid ${BaseColors.border}`,
               color: BaseColors.textSecondary,
-              borderRadius: '3px',
+              borderRadius: '2px',
               cursor: 'pointer',
-              fontSize: '11px',
-              fontWeight: 600,
+              fontSize: FontSize.sm,
+              fontWeight: 500,
+              fontFamily: FontFamily.sans,
             }}
           >
-            CANCEL
+            Cancel
           </button>
 
           <button
             onClick={onConfirm}
             disabled={isProcessing}
             style={{
-              padding: '7px 16px',
-              background: '#dc2626',
+              padding: '7px 18px',
+              background: StateColors.DEAD,
               border: 'none',
               color: '#ffffff',
-              borderRadius: '3px',
+              borderRadius: '2px',
               cursor: isProcessing ? 'wait' : 'pointer',
-              fontSize: '11px',
-              fontWeight: 700,
+              fontSize: FontSize.sm,
+              fontWeight: 600,
+              fontFamily: FontFamily.sans,
             }}
           >
-            {isProcessing ? 'EXECUTING...' : isKill ? `KILL NODE (${targetId})` : 'CORRUPT CHUNK PAYLOAD'}
+            {isProcessing ? 'Executing...' : isKill ? `Kill Node (${targetId})` : 'Corrupt Chunk'}
           </button>
         </div>
       </div>

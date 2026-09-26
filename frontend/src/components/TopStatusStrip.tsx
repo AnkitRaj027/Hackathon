@@ -1,12 +1,11 @@
 // TopStatusStrip Component
-// Minimal operational status bar — compact, information-dense.
-// All values come from real backend state.
+// Standard, high-density operational status bar for infrastructure control plane.
 
 import React from 'react';
 import { ClusterStatus, MetricsPoint } from '../state/types';
 import { BaseColors, StateColors } from '../design/tokens';
 import { FontFamily, FontSize, FontWeight } from '../design/typography';
-import { Shield, Upload, RefreshCw, Radio } from 'lucide-react';
+import { Shield, Upload, RefreshCw, Radio, Bot } from 'lucide-react';
 
 interface TopStatusStripProps {
   status: ClusterStatus | null;
@@ -14,6 +13,8 @@ interface TopStatusStripProps {
   metrics: MetricsPoint[];
   onOpenUpload: () => void;
   onRefresh: () => void;
+  onToggleAI?: () => void;
+  isAIOpen?: boolean;
 }
 
 const clusterStatusColor = (s: string | undefined): string => {
@@ -29,16 +30,16 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
   metrics,
   onOpenUpload,
   onRefresh,
+  onToggleAI,
+  isAIOpen,
 }) => {
-  // Latest metrics point — only show if backend has real data
   const latest = metrics.length > 0 ? metrics[metrics.length - 1] : null;
-
   const statusColor = clusterStatusColor(status?.status);
 
   return (
     <header
       style={{
-        height: '46px',
+        height: '48px',
         background: BaseColors.bg,
         borderBottom: `1px solid ${BaseColors.border}`,
         display: 'flex',
@@ -50,40 +51,43 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
         left: 0,
         right: 0,
         zIndex: 50,
-        fontFamily: FontFamily.mono,
-        fontSize: FontSize.md,
         color: BaseColors.textPrimary,
+        userSelect: 'none',
       }}
     >
-      {/* Brand */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontWeight: FontWeight.bold,
-            letterSpacing: '0.08em',
-          }}
-        >
-          <Shield size={15} color={StateColors.HEALTHY} />
-          <span style={{ fontSize: FontSize.xl, color: BaseColors.textPrimary }}>VAULT</span>
+      {/* Brand & System State */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Shield size={16} color={BaseColors.accent} />
           <span
             style={{
+              fontFamily: FontFamily.sans,
+              fontWeight: FontWeight.bold,
+              fontSize: FontSize.lg,
+              letterSpacing: '0.03em',
+              color: BaseColors.textPrimary,
+            }}
+          >
+            VAULT
+          </span>
+          <span
+            style={{
+              fontFamily: FontFamily.mono,
               fontSize: FontSize.xxs,
               color: BaseColors.textMuted,
               border: `1px solid ${BaseColors.border}`,
-              padding: '1px 5px',
+              padding: '2px 5px',
               borderRadius: '2px',
+              letterSpacing: '0.04em',
             }}
           >
-            DISTRIBUTED STORAGE
+            OPERATIONS
           </span>
         </div>
 
-        <div style={{ width: '1px', height: '18px', background: BaseColors.border }} />
+        <div style={{ width: '1px', height: '16px', background: BaseColors.border }} />
 
-        {/* Cluster health indicator */}
+        {/* Cluster Status Badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span
             style={{
@@ -91,15 +95,16 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
               height: '7px',
               borderRadius: '50%',
               background: statusColor,
-              boxShadow: `0 0 8px ${statusColor}`,
-              transition: 'background 300ms ease, box-shadow 300ms ease',
+              display: 'inline-block',
             }}
           />
           <span
             style={{
+              fontFamily: FontFamily.mono,
+              fontSize: FontSize.sm,
               fontWeight: FontWeight.semibold,
               color: statusColor,
-              transition: 'color 300ms ease',
+              letterSpacing: '0.02em',
             }}
           >
             {status?.status || 'INITIALIZING'}
@@ -107,21 +112,28 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
         </div>
       </div>
 
-      {/* Live cluster metrics (center) */}
+      {/* Cluster Telemetry Strip */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '22px',
-          fontSize: FontSize.xs,
+          gap: '20px',
+          fontFamily: FontFamily.mono,
+          fontSize: FontSize.sm,
         }}
       >
         <Metric label="NODES" value={status ? `${status.healthy_nodes}/${status.total_nodes}` : null} />
         <Metric label="OBJECTS" value={status ? String(status.active_objects) : null} />
         <Metric
           label="TOPOLOGY"
-          value={status ? (status.erasure_coding ? 'RS 2+1' : `RF ${status.replication_factor} · W${status.write_quorum} R${status.read_quorum}`) : null}
-          color={StateColors.HEALTHY}
+          value={
+            status
+              ? status.erasure_coding
+                ? 'RS 2+1'
+                : `RF ${status.replication_factor} (W${status.write_quorum} R${status.read_quorum})`
+              : null
+          }
+          color={BaseColors.accent}
         />
         {latest && (
           <>
@@ -143,7 +155,7 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
           </>
         )}
 
-        {/* SSE connection status */}
+        {/* Live SSE Indicator */}
         <div
           style={{
             display: 'flex',
@@ -154,11 +166,11 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
           }}
         >
           <Radio size={11} />
-          <span>{connected ? 'LIVE' : 'DISCONNECTED'}</span>
+          <span>{connected ? 'LIVE' : 'OFFLINE'}</span>
         </div>
       </div>
 
-      {/* Action Controls */}
+      {/* Actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <button
           onClick={onRefresh}
@@ -167,13 +179,13 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
             background: 'transparent',
             border: `1px solid ${BaseColors.border}`,
             color: BaseColors.textSecondary,
-            padding: '4px 8px',
+            padding: '5px 10px',
             borderRadius: '2px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
-            fontSize: FontSize.xs,
+            gap: '5px',
+            fontSize: FontSize.sm,
             fontFamily: FontFamily.mono,
           }}
         >
@@ -181,12 +193,35 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
           <span>SYNC</span>
         </button>
 
+        {onToggleAI && (
+          <button
+            onClick={onToggleAI}
+            title="Toggle Vault AI Operations Copilot"
+            style={{
+              background: isAIOpen ? BaseColors.surfaceElevated : 'transparent',
+              border: `1px solid ${isAIOpen ? BaseColors.accent : BaseColors.border}`,
+              color: isAIOpen ? BaseColors.accent : BaseColors.textSecondary,
+              padding: '5px 10px',
+              borderRadius: '2px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              fontSize: FontSize.sm,
+              fontFamily: FontFamily.mono,
+            }}
+          >
+            <Bot size={13} color={isAIOpen ? BaseColors.accent : BaseColors.textSecondary} />
+            <span>AI COPILOT</span>
+          </button>
+        )}
+
         <button
           onClick={onOpenUpload}
           style={{
             background: BaseColors.accent,
             border: 'none',
-            color: BaseColors.bg,
+            color: '#000000',
             padding: '5px 12px',
             borderRadius: '2px',
             cursor: 'pointer',
@@ -194,11 +229,12 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
             alignItems: 'center',
             gap: '6px',
             fontWeight: FontWeight.semibold,
-            fontSize: FontSize.xs,
+            fontSize: FontSize.sm,
             fontFamily: FontFamily.mono,
+            letterSpacing: '0.02em',
           }}
         >
-          <Upload size={11} />
+          <Upload size={12} />
           <span>INGEST OBJECT</span>
         </button>
       </div>
@@ -206,20 +242,19 @@ export const TopStatusStrip: React.FC<TopStatusStripProps> = ({
   );
 };
 
-// ─── Reusable inline metric cell ──────────────────────────────────────────
-
 const Metric: React.FC<{ label: string; value: string | null; color?: string }> = ({
   label,
   value,
   color,
 }) => (
-  <div>
-    <span style={{ color: BaseColors.textMuted, marginRight: '5px' }}>{label}:</span>
+  <div style={{ display: 'flex', alignItems: 'baseline', gap: '5px' }}>
+    <span style={{ color: BaseColors.textMuted, fontSize: FontSize.xs }}>{label}:</span>
     <span
       style={{
-        fontWeight: FontWeight.semibold,
+        fontWeight: FontWeight.medium,
         color: color ?? BaseColors.textPrimary,
         fontVariantNumeric: 'tabular-nums',
+        fontSize: FontSize.sm,
       }}
     >
       {value ?? '—'}

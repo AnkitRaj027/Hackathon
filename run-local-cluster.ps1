@@ -60,12 +60,25 @@ $coordProc = Start-Process -FilePath "$workDir\bin\coordinator.exe" `
     -RedirectStandardOutput "$workDir\logs\coord.log" -RedirectStandardError "$workDir\logs\coord_err.log" `
     -WorkingDirectory $workDir -PassThru
 
-Start-Sleep -Seconds 2
+# 7. Start AI Control API (Python FastAPI on port 8000)
+$aiProc = $null
+if (Get-Command python -ErrorAction SilentlyContinue) {
+    Write-Host "Starting Vault AI Control API on :8000..."
+    $aiProc = Start-Process -FilePath "python" `
+        -ArgumentList "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "8000" `
+        -RedirectStandardOutput "$workDir\logs\ai_backend.log" -RedirectStandardError "$workDir\logs\ai_backend_err.log" `
+        -WorkingDirectory $workDir -PassThru
+}
+
+Start-Sleep -Seconds 1
 
 # Output PIDs to file for cleanup
-"$($etcdProc.Id),$($metaProc.Id),$($s1Proc.Id),$($s2Proc.Id),$($s3Proc.Id),$($coordProc.Id)" | Out-File -FilePath "$workDir\cluster_pids.txt" -Encoding utf8
+$allProcs = @($etcdProc, $metaProc, $s1Proc, $s2Proc, $s3Proc, $coordProc)
+if ($aiProc) { $allProcs += $aiProc }
+$pidList = ($allProcs | ForEach-Object { $_.Id }) -join ','
+$pidList | Out-File -FilePath "$workDir\cluster_pids.txt" -Encoding utf8
 
-Write-Host "Cluster started successfully. PIDs: $($etcdProc.Id), $($metaProc.Id), $($s1Proc.Id), $($s2Proc.Id), $($s3Proc.Id), $($coordProc.Id)"
+Write-Host "Cluster started successfully. PIDs: $pidList"
 
 # Keep alive to maintain processes
 try {
@@ -78,9 +91,10 @@ try {
     }
 } finally {
     Write-Host "Shutting down cluster processes..."
-    $pids = @($coordProc.Id, $s3Proc.Id, $s2Proc.Id, $s1Proc.Id, $metaProc.Id, $etcdProc.Id)
-    foreach ($p in $pids) {
-        Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
+    foreach ($proc in $allProcs) {
+        if ($proc -and -not $proc.HasExited) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        }
     }
     Remove-Item "$workDir\cluster_pids.txt" -Force -ErrorAction SilentlyContinue
 }

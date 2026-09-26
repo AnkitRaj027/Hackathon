@@ -10,6 +10,7 @@ import { ContextualInspector } from './components/ContextualInspector';
 import { EventTimeline } from './components/EventTimeline';
 import { UploadModal } from './components/UploadModal';
 import { ChaosConfirmationModal } from './components/ChaosConfirmationModal';
+import { AIAssistantDrawer } from './components/AIAssistantDrawer';
 import { LoadingScreen } from './components/LoadingScreen';
 import { ConnectionError } from './components/ConnectionError';
 import { Maximize2 } from 'lucide-react';
@@ -41,6 +42,7 @@ export const App: React.FC = () => {
   } = useVaultState();
 
   const [uploadOpen, setUploadOpen] = useState<boolean>(false);
+  const [aiOpen, setAiOpen] = useState<boolean>(false);
   const [chaosModal, setChaosModal] = useState<{
     isOpen: boolean;
     type: 'kill-node' | 'corrupt-chunk';
@@ -103,6 +105,8 @@ export const App: React.FC = () => {
         metrics={metrics}
         onOpenUpload={() => setUploadOpen(true)}
         onRefresh={refresh}
+        onToggleAI={() => setAiOpen((prev) => !prev)}
+        isAIOpen={aiOpen}
       />
 
       {/* ── 2. Unified Operations Console Panel (Left Dock) ───────── */}
@@ -135,17 +139,17 @@ export const App: React.FC = () => {
           onClick={() => setSelection({ type: 'none' })}
           style={{
             position: 'absolute',
-            bottom: '44px',
+            bottom: '36px',
             right: '404px',
-            background: BaseColors.surface,
+            background: BaseColors.bg,
             border: `1px solid ${BaseColors.border}`,
             color: BaseColors.textSecondary,
-            padding: '5px 10px',
+            padding: '4px 8px',
             borderRadius: '2px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
+            gap: '5px',
             fontSize: FontSize.xs,
             fontFamily: FontFamily.mono,
             zIndex: 40,
@@ -187,6 +191,13 @@ export const App: React.FC = () => {
         onConfirm={confirmChaos}
         onCancel={() => setChaosModal({ isOpen: false, type: 'kill-node', targetId: '' })}
         isProcessing={chaosProcessing}
+      />
+
+      {/* ── 9. AI Operations Copilot Drawer ───────────────────────── */}
+      <AIAssistantDrawer
+        isOpen={aiOpen}
+        onClose={() => setAiOpen(false)}
+        onActionExecuted={refresh}
       />
     </div>
   );
