@@ -27,6 +27,16 @@ class ToolDefinition:
 			"parameters": self.parameters,
 		}
 
+	def mistral_declaration(self) -> dict[str, Any]:
+		return {
+			"type": "function",
+			"function": {
+				"name": self.name,
+				"description": self.description,
+				"parameters": self.parameters,
+			},
+		}
+
 
 class ToolRegistry:
 	def __init__(self, service: VaultService) -> None:
@@ -81,7 +91,9 @@ class ToolRegistry:
 		add("remove_node", "Permanently remove a storage node from Vault.", {"node_id": string("Exact Vault node ID.")}, ["node_id"], service.remove_node, RiskLevel.DESTRUCTIVE)
 		return registry
 
-	def declarations(self) -> list[dict[str, Any]]:
+	def declarations(self, provider: str = "gemini") -> list[dict[str, Any]]:
+		if provider == "mistral":
+			return [tool.mistral_declaration() for tool in self.available_tools.values()]
 		return [tool.gemini_declaration() for tool in self.available_tools.values()]
 
 	def get(self, name: str) -> ToolDefinition:

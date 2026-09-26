@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import secrets
 from dataclasses import dataclass
@@ -8,10 +9,20 @@ from threading import RLock
 from typing import Any, Protocol
 from uuid import uuid4
 
+import httpx
 from google import genai
 
 from .audit import AuditLog
-from .config import APPROVAL_TTL_SECONDS, GEMINI_API_KEY, GEMINI_MODEL, VAULT_BACKEND_URL
+from .config import (
+    APPROVAL_TTL_SECONDS,
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    LLM_PROVIDER,
+    MISTRAL_API_KEY,
+    MISTRAL_BASE_URL,
+    MISTRAL_MODEL,
+    VAULT_BACKEND_URL,
+)
 from .models import PendingAction, ToolCall
 from .permissions import ActionStatus, RiskLevel, requires_approval
 from .prompts import SYSTEM_PROMPT
@@ -156,6 +167,194 @@ class GeminiInteractionsModel:
         )
 
 
+class MistralChatModel:
+    """High-speed Mistral AI model provider using persistent HTTP/2 connection pooling."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+    ) -> None:
+        self.api_key = api_key if api_key is not None else MISTRAL_API_KEY
+        self.model = model or MISTRAL_MODEL or "mistral-small-latest"
+        self.base_url = (base_url or MISTRAL_BASE_URL or "https://api.mistral.ai/v1").rstrip("/")
+        self._client: httpx.Client | None = None
+        self._sessions: dict[str, list[dict[str, Any]]] = {}
+
+    def _get_client(self) -> httpx.Client:
+        if not self.api_key:
+            from .config import BACKEND_DIR, ROOT_DIR
+            from dotenv import dotenv_values
+            env_vals = {**dotenv_values(ROOT_DIR / ".env"), **dotenv_values(BACKEND_DIR / ".env")}
+            self.api_key = env_vals.get("MISTRAL_API_KEY", "").strip() or os.getenv("MISTRAL_API_KEY", "").strip()
+        if not self.api_key:
+            raise RuntimeError(
+                "Mistral API key is not configured. Please paste your MISTRAL_API_KEY into backend/.env."
+            )
+        if self._client is None or self._client.is_closed or self._client.headers.get("Authorization") != f"Bearer {self.api_key}":
+            self._client = httpx.Client(
+                base_url=self.base_url,
+                timeout=25.0,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            )
+        return self._client
+
+    def complete(
+        self,
+        message: str,
+        tools: list[dict[str, Any]],
+        previous_interaction_id: str | None,
+        knowledge_context: list[dict[str, str]],
+    ) -> ModelReply:
+        client = self._get_client()
+        enriched_message = message
+        if knowledge_context:
+            sources = "\n\n".join(
+                f"[{item['source']}]\n{item['content']}" for item in knowledge_context
+            )
+            enriched_message = (
+                "Retrieved general Vault documentation follows. It is not live state; "
+                f"use tools for operational facts.\n{sources}\n\nUser request: {message}"
+            )
+
+        session_id = previous_interaction_id or uuid4().hex
+        messages = list(self._sessions.get(session_id, []))
+        if not messages:
+            messages.append({"role": "system", "content": SYSTEM_PROMPT})
+        messages.append({"role": "user", "content": enriched_message})
+
+        mistral_tools = self._format_tools(tools)
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.15,
+            "max_tokens": 1200,
+        }
+        if mistral_tools:
+            payload["tools"] = mistral_tools
+            payload["tool_choice"] = "auto"
+
+        response = client.post("/chat/completions", json=payload)
+        return self._handle_response(response, session_id, messages)
+
+    def submit_tool_result(
+        self,
+        tool_name: str,
+        call_id: str | None,
+        result: dict[str, Any],
+        interaction_id: str | None,
+        tools: list[dict[str, Any]],
+    ) -> ModelReply:
+        if not call_id:
+            raise RuntimeError("Mistral requires a call ID to submit tool result.")
+        return self.submit_tool_results(
+            [{"name": tool_name, "call_id": call_id, "result": result}],
+            interaction_id,
+            tools,
+        )
+
+    def submit_tool_results(
+        self,
+        results: list[dict[str, Any]],
+        interaction_id: str | None,
+        tools: list[dict[str, Any]],
+    ) -> ModelReply:
+        if not interaction_id or interaction_id not in self._sessions:
+            raise RuntimeError("Mistral session interaction not found to submit tool results.")
+
+        client = self._get_client()
+        messages = self._sessions[interaction_id]
+        for item in results:
+            messages.append({
+                "role": "tool",
+                "tool_call_id": item["call_id"],
+                "name": item["name"],
+                "content": json.dumps(item["result"], default=str),
+            })
+
+        mistral_tools = self._format_tools(tools)
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.15,
+            "max_tokens": 1200,
+        }
+        if mistral_tools:
+            payload["tools"] = mistral_tools
+            payload["tool_choice"] = "auto"
+
+        response = client.post("/chat/completions", json=payload)
+        return self._handle_response(response, interaction_id, messages)
+
+    @staticmethod
+    def _format_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        mistral_tools = []
+        for t in tools:
+            if "function" in t:
+                mistral_tools.append(t)
+            elif t.get("type") == "function":
+                mistral_tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": t.get("name"),
+                        "description": t.get("description", ""),
+                        "parameters": t.get("parameters", {}),
+                    },
+                })
+        return mistral_tools
+
+    def _handle_response(
+        self, response: httpx.Response, session_id: str, messages: list[dict[str, Any]]
+    ) -> ModelReply:
+        if response.status_code != 200:
+            err_text = response.text
+            try:
+                err_data = response.json()
+                err_text = (
+                    err_data.get("message")
+                    or err_data.get("error", {}).get("message")
+                    or err_text
+                )
+            except Exception:
+                pass
+            raise RuntimeError(f"Mistral API error ({response.status_code}): {err_text}")
+
+        data = response.json()
+        choice = data["choices"][0]
+        msg = choice["message"]
+        messages.append(msg)
+        self._sessions[session_id] = messages
+
+        tool_calls: list[ToolCall] = []
+        for tc in msg.get("tool_calls") or []:
+            fn = tc.get("function", {})
+            args = fn.get("arguments", "{}")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except Exception:
+                    args = {}
+            tool_calls.append(
+                ToolCall(
+                    name=fn.get("name", ""),
+                    arguments=args,
+                    call_id=tc.get("id"),
+                )
+            )
+
+        return ModelReply(
+            text=msg.get("content") or "",
+            tool_calls=tool_calls if tool_calls else None,
+            interaction_id=session_id,
+            call_id=tool_calls[0].call_id if tool_calls else None,
+        )
+
+
 class ActionError(Exception):
     def __init__(self, message: str, status_code: int) -> None:
         super().__init__(message)
@@ -174,7 +373,12 @@ class VaultAIAgent:
     ) -> None:
         self.service = service or MockVaultService()
         self.tools = ToolRegistry(self.service)
-        self.model = model or GeminiInteractionsModel()
+        if model is not None:
+            self.model = model
+        elif LLM_PROVIDER == "mistral" or MISTRAL_API_KEY:
+            self.model = MistralChatModel()
+        else:
+            self.model = GeminiInteractionsModel()
         self.audit_log = audit_log or AuditLog()
         self.retriever = retriever or KnowledgeRetriever()
         self.approval_ttl_seconds = approval_ttl_seconds
@@ -187,11 +391,13 @@ class VaultAIAgent:
         session_id = session_id or uuid4().hex
         grounded_by_tool = False
         tool_calls_processed = 0
+        provider_name = "mistral" if isinstance(self.model, MistralChatModel) else "gemini"
+        tools_list = self.tools.declarations(provider=provider_name)
         self.audit_log.record(session_id=session_id, user_request=message, status="received")
         try:
             reply = self.model.complete(
                 message=message,
-                tools=self.tools.declarations(),
+                tools=tools_list,
                 previous_interaction_id=self.session_interactions.get(session_id),
                 knowledge_context=self.retriever.retrieve(message),
             )
@@ -278,13 +484,13 @@ class VaultAIAgent:
                         call_id=item["call_id"],
                         result=item["result"],
                         interaction_id=reply.interaction_id,
-                        tools=self.tools.declarations(),
+                        tools=tools_list,
                     )
                 else:
                     reply = self.model.submit_tool_results(
                         results=tool_results,
                         interaction_id=reply.interaction_id,
-                        tools=self.tools.declarations(),
+                        tools=tools_list,
                     )
             return self._error("The request needed too many consecutive tool calls. Please make it more specific.", session_id)
         except LookupError as exc:
@@ -293,10 +499,16 @@ class VaultAIAgent:
         except ToolArgumentError as exc:
             self.audit_log.record(session_id=session_id, user_request=message, status="invalid_arguments", error=str(exc))
             return self._error(str(exc), session_id)
-        except Exception:
+        except Exception as exc:
             logger.exception("Vault AI chat failed for session %s", session_id)
-            self.audit_log.record(session_id=session_id, user_request=message, status="failed", error="Model or tool processing failed")
-            return self._error("Vault AI could not complete the request. Check the backend configuration and try again.", session_id)
+            err_msg = str(exc)
+            if "RateLimitError" in err_msg or "rate limit" in err_msg.lower() or "429" in err_msg:
+                p_name = "Mistral" if isinstance(self.model, MistralChatModel) else "AI"
+                user_msg = f"{p_name} API rate limit reached. Please wait a moment before trying again."
+            else:
+                user_msg = "Vault AI could not complete the request. Check the backend configuration and try again."
+            self.audit_log.record(session_id=session_id, user_request=message, status="failed", error=err_msg)
+            return self._error(user_msg, session_id)
 
     def approve(self, action_id: str) -> dict[str, Any]:
         approved = self._claim_pending(action_id, ActionStatus.APPROVED)
@@ -466,7 +678,39 @@ class VaultAIAgent:
         return {"type": "error", "message": message, "session_id": session_id}
 
     @staticmethod
+    def _is_educational_or_general(message: str) -> bool:
+        normalized = message.strip().lower()
+        if not normalized:
+            return True
+        educational_cues = (
+            "explain", "how does", "how do", "how can", "how to", "why does", "why do",
+            "why is", "why are", "why did", "what is", "what are", "what does", "what happens",
+            "teach me", "tell me about", "describe", "difference between", "compare",
+            "can you explain", "could you explain", "help me understand", "walk me through",
+            "guide me", "under the hood", "in simple terms", "concept", "theory",
+            "how it works", "architecture", "overview", "principle", "algorithm",
+        )
+        conversational_cues = (
+            "hello", "hi", "hey", "who are you", "what can you do", "thanks", "thank you",
+            "good morning", "good evening", "howdy", "greetings", "help",
+        )
+        if any(cue in normalized for cue in educational_cues):
+            return True
+        if any(
+            normalized == cue
+            or normalized.startswith(cue + " ")
+            or normalized.startswith(cue + ",")
+            or normalized.startswith(cue + "!")
+            or normalized.startswith(cue + "?")
+            for cue in conversational_cues
+        ):
+            return True
+        return False
+
+    @staticmethod
     def _requires_live_tool(message: str) -> bool:
+        if VaultAIAgent._is_educational_or_general(message):
+            return False
         normalized = message.lower()
         state_terms = (
             "status", "health", "healthy", "unavailable", "currently down", "node ",

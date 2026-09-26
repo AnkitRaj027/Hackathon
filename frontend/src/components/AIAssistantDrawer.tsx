@@ -11,6 +11,8 @@ interface AIAssistantDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onActionExecuted?: () => void;
+  queuedPrompt?: string | null;
+  onClearQueuedPrompt?: () => void;
 }
 
 interface Message {
@@ -31,12 +33,14 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
   isOpen,
   onClose,
   onActionExecuted,
+  queuedPrompt,
+  onClearQueuedPrompt,
 }) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       sender: 'agent',
-      text: 'Vault AI Control Plane ready. Query cluster state, audit integrity, or initiate supervised operations.',
+      text: '🎓 **Vault Systems Mentor & Intelligent Teacher** ready.\n\nI break down distributed storage mechanics (consistent hashing, 3x quorum writes, Reed-Solomon 2+1 erasure coding, and self-healing) and explain each step you perform in the cluster.\n\nAsk me any architectural question, query live cluster health, or perform operational actions.',
       time: new Date().toLocaleTimeString(),
     },
   ]);
@@ -48,6 +52,13 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    if (isOpen && queuedPrompt) {
+      sendMessage(queuedPrompt);
+      onClearQueuedPrompt?.();
+    }
+  }, [isOpen, queuedPrompt]);
 
   if (!isOpen) return null;
 
@@ -277,13 +288,17 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
             style={{
               fontSize: FontSize.xxs,
               fontFamily: FontFamily.mono,
-              background: 'rgba(56, 189, 248, 0.1)',
+              background: 'rgba(56, 189, 248, 0.12)',
               color: BaseColors.accent,
               padding: '2px 6px',
               borderRadius: '2px',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
             }}
           >
-            ACTIVE
+            <span>🎓</span> SYSTEMS TEACHER
           </span>
         </div>
         <button
@@ -292,6 +307,24 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
         >
           <X size={16} />
         </button>
+      </div>
+
+      {/* Teacher Persona Banner */}
+      <div
+        style={{
+          padding: '6px 12px',
+          background: 'rgba(56, 189, 248, 0.04)',
+          borderBottom: `1px solid ${BaseColors.border}`,
+          fontSize: FontSize.xs,
+          fontFamily: FontFamily.mono,
+          color: BaseColors.textMuted,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <span>Explaining the "Why, What & How" under the hood</span>
+        <span style={{ color: BaseColors.accent, fontSize: FontSize.xxs }}>LIVE</span>
       </div>
 
       {/* Quick Prompts */}
@@ -305,10 +338,18 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
           overflowX: 'auto',
         }}
       >
-        {['Show node health', 'Audit object integrity', 'List objects'].map((prompt) => (
+        {[
+          { label: '🎓 How 3x Replication Works', text: 'Explain how 3x replication and quorum consistency work in Vault' },
+          { label: '🎓 Upload Lifecycle', text: 'Explain what happens step by step when an object is uploaded to Vault' },
+          { label: '🎓 Hash Ring & Tokens', text: 'Explain how the consistent hashing ring maps objects to virtual nodes' },
+          { label: '🎓 Reed-Solomon 2+1', text: 'Explain the math and trade-offs of Reed-Solomon (2+1) erasure coding' },
+          { label: '🎓 Bit-Rot & Healing', text: 'Explain how Vault detects bit-rot via cryptographic hashes and performs self-healing' },
+          { label: '🔍 Node Health', text: 'Show node health' },
+          { label: '🔍 Audit Integrity', text: 'Audit object integrity' },
+        ].map((item) => (
           <button
-            key={prompt}
-            onClick={() => sendMessage(prompt)}
+            key={item.label}
+            onClick={() => sendMessage(item.text)}
             disabled={loading}
             style={{
               padding: '4px 10px',
@@ -322,7 +363,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
               fontFamily: FontFamily.mono,
             }}
           >
-            {prompt}
+            {item.label}
           </button>
         ))}
       </div>

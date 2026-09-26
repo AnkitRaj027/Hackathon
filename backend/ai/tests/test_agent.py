@@ -334,3 +334,60 @@ def test_model_conversation_context_is_chained(agent_factory) -> None:
     agent.chat("How many replicas does report.pdf have?", "session-1")
     agent.chat("Repair it", "session-1")
     assert model.previous_ids == [None, "turn-1"]
+
+
+def test_conversational_message_returns_direct_answer(agent_factory) -> None:
+    agent, _ = agent_factory([
+        ModelReply(text="Hello! I am your Vault intelligent teacher and distributed systems mentor. How can I help you today?")
+    ])
+    response = agent.chat("Hello, who are you?")
+    assert response["type"] == "answer"
+    assert "intelligent teacher" in response["message"]
+
+
+def test_educational_explanation_returns_direct_answer(agent_factory) -> None:
+    agent, _ = agent_factory([
+        ModelReply(text="In 3x replication, Vault writes data across 3 separate storage nodes on the consistent hash ring, requiring W=3 for quorum writes and R=1 for quorum reads.")
+    ])
+    response = agent.chat("Explain how 3x replication and quorum consistency work.")
+    assert response["type"] == "answer"
+    assert "consistent hash ring" in response["message"]
+
+
+def test_mistral_chat_model_tool_formatting_and_parsing() -> None:
+    from backend.ai.agent import MistralChatModel
+    import httpx
+
+    mistral = MistralChatModel(api_key="test-key", model="mistral-small-latest")
+    formatted = mistral._format_tools([
+        {"type": "function", "name": "get_node_status", "description": "Get status", "parameters": {}}
+    ])
+    assert len(formatted) == 1
+    assert formatted[0]["type"] == "function"
+    assert formatted[0]["function"]["name"] == "get_node_status"
+
+    mock_resp = httpx.Response(
+        status_code=200,
+        json={
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call-123",
+                                "type": "function",
+                                "function": {"name": "get_node_status", "arguments": "{}"},
+                            }
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+    reply = mistral._handle_response(mock_resp, "sess-1", [])
+    assert reply.tool_calls is not None
+    assert reply.tool_calls[0].name == "get_node_status"
+    assert reply.tool_calls[0].call_id == "call-123"
+

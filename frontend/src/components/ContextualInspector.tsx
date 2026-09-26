@@ -21,6 +21,7 @@ interface ContextualInspectorProps {
   onDeleteObject: (key: string) => void;
   onTriggerKillNode: (nodeId: string) => void;
   onTriggerCorruptChunk: (chunkId: string) => void;
+  onExplainWithAI?: (prompt: string) => void;
 }
 
 // ─── Shared primitives ────────────────────────────────────────────────────
@@ -82,6 +83,7 @@ export const ContextualInspector: React.FC<ContextualInspectorProps> = ({
   onDeleteObject,
   onTriggerKillNode,
   onTriggerCorruptChunk,
+  onExplainWithAI,
 }) => {
   if (selection.type === 'none') return null;
 
@@ -197,6 +199,35 @@ export const ContextualInspector: React.FC<ContextualInspectorProps> = ({
                 {selectedNode.status}
               </span>
             </div>
+
+            {onExplainWithAI && (
+              <button
+                onClick={() =>
+                  onExplainWithAI(
+                    `Explain the role, telemetry, and consistent hash ring positioning of node ${selectedNode.id} (${selectedNode.address}, status: ${selectedNode.status}) in Vault.`
+                  )
+                }
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  color: BaseColors.accent,
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  fontSize: FontSize.xs,
+                  fontFamily: FontFamily.mono,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  letterSpacing: '0.03em',
+                  transition: 'background 150ms ease',
+                }}
+              >
+                <span>🎓</span> ASK AI TEACHER TO EXPLAIN THIS NODE
+              </button>
+            )}
 
             {/* Core metrics */}
             <Section title="TELEMETRY">
@@ -374,6 +405,35 @@ export const ContextualInspector: React.FC<ContextualInspectorProps> = ({
                 {selectedObject.key}
               </span>
             </div>
+
+            {onExplainWithAI && (
+              <button
+                onClick={() =>
+                  onExplainWithAI(
+                    `Explain how object '${selectedObject.key}' (${selectedObject.size.toLocaleString()} bytes, scheme: ${selectedObject.scheme}, chunks: ${selectedObject.chunks.length}) is partitioned, placed on the consistent hash ring, and protected against data loss in Vault.`
+                  )
+                }
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  color: BaseColors.accent,
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  fontSize: FontSize.xs,
+                  fontFamily: FontFamily.mono,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  letterSpacing: '0.03em',
+                  transition: 'background 150ms ease',
+                }}
+              >
+                <span>🎓</span> ASK AI TEACHER TO EXPLAIN THIS OBJECT
+              </button>
+            )}
 
             <Section title="OBJECT METADATA">
               <MetricGrid>

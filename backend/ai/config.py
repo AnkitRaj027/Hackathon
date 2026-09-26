@@ -12,6 +12,11 @@ load_dotenv(ROOT_DIR / ".env")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
 
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip()
+MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest").strip()
+MISTRAL_BASE_URL = os.getenv("MISTRAL_BASE_URL", "https://api.mistral.ai/v1").strip()
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "mistral" if MISTRAL_API_KEY else "gemini").strip().lower()
+
 DEFAULT_ORIGINS = (
     "http://localhost:8085,http://localhost:5173,http://localhost:3000,"
     "http://127.0.0.1:8085,http://127.0.0.1:5173,http://127.0.0.1:3000"

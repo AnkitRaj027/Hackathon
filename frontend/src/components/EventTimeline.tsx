@@ -10,6 +10,7 @@ import { ChevronUp, ChevronDown, Activity, X } from 'lucide-react';
 
 interface EventTimelineProps {
   events: StorageEvent[];
+  onExplainEvent?: (event: StorageEvent) => void;
 }
 
 // ─── Badge config per event type ──────────────────────────────────────────
@@ -159,7 +160,7 @@ const renderEventDetail = (ev: StorageEvent): React.ReactNode => {
 
 // ─── Main Component ────────────────────────────────────────────────────────
 
-export const EventTimeline: React.FC<EventTimelineProps> = ({ events }) => {
+export const EventTimeline: React.FC<EventTimelineProps> = ({ events, onExplainEvent }) => {
   const [expanded, setExpanded] = useState<boolean>(false);
   const [selectedEvent, setSelectedEvent] = useState<StorageEvent | null>(null);
 
@@ -216,7 +217,36 @@ export const EventTimeline: React.FC<EventTimelineProps> = ({ events }) => {
               <X size={13} />
             </button>
           </div>
-          <div style={{ padding: '12px' }}>{renderEventDetail(selectedEvent)}</div>
+          <div style={{ padding: '12px' }}>
+            {renderEventDetail(selectedEvent)}
+            {onExplainEvent && (
+              <button
+                onClick={() => {
+                  onExplainEvent(selectedEvent);
+                  setSelectedEvent(null);
+                }}
+                style={{
+                  marginTop: '10px',
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  color: BaseColors.accent,
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  fontSize: FontSize.xs,
+                  fontFamily: FontFamily.mono,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  letterSpacing: '0.03em',
+                }}
+              >
+                <span>🎓</span> ASK AI TEACHER TO EXPLAIN THIS EVENT
+              </button>
+            )}
+          </div>
         </div>
       )}
 

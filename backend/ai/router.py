@@ -42,8 +42,10 @@ def actions(request: Request) -> dict:
 @router.get("/health")
 def health(request: Request) -> dict:
     agent = _agent(request)
+    provider = "mistral" if type(agent.model).__name__ == "MistralChatModel" else "gemini"
     return {
         "status": "ok",
+        "provider": provider,
         "model_configured": bool(getattr(agent.model, "api_key", None)),
         "model": getattr(agent.model, "model", "injected"),
         "service": type(agent.service).__name__,

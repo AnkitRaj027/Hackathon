@@ -43,12 +43,18 @@ export const App: React.FC = () => {
 
   const [uploadOpen, setUploadOpen] = useState<boolean>(false);
   const [aiOpen, setAiOpen] = useState<boolean>(false);
+  const [queuedAiPrompt, setQueuedAiPrompt] = useState<string | null>(null);
   const [chaosModal, setChaosModal] = useState<{
     isOpen: boolean;
     type: 'kill-node' | 'corrupt-chunk';
     targetId: string;
   }>({ isOpen: false, type: 'kill-node', targetId: '' });
   const [chaosProcessing, setChaosProcessing] = useState<boolean>(false);
+
+  const askTeacher = (prompt: string) => {
+    setQueuedAiPrompt(prompt);
+    setAiOpen(true);
+  };
 
   // ─── Loading state — show until first snapshot arrives ────────────────
   const isLoading = !status && nodes.length === 0;
@@ -73,11 +79,19 @@ export const App: React.FC = () => {
 
   const confirmChaos = async () => {
     setChaosProcessing(true);
+    const modalType = chaosModal.type;
+    const target = chaosModal.targetId;
     try {
-      if (chaosModal.type === 'kill-node') {
-        await killNode(chaosModal.targetId);
+      if (modalType === 'kill-node') {
+        await killNode(target);
+        askTeacher(
+          `I just killed node '${target}'. Please explain step-by-step what happens to heartbeat failure detection, how the consistent hash ring re-routes traffic, and how degraded replicas are healed.`
+        );
       } else {
-        await corruptChunk(chaosModal.targetId);
+        await corruptChunk(target);
+        askTeacher(
+          `I just injected bit-rot into chunk '${target}'. Please explain step-by-step how Vault detects this corrupted chunk via SHA-256 integrity verification and repairs it from surviving replicas.`
+        );
       }
       setChaosModal({ isOpen: false, type: 'kill-node', targetId: '' });
       refresh();
@@ -171,16 +185,29 @@ export const App: React.FC = () => {
         onDeleteObject={deleteObject}
         onTriggerKillNode={triggerKillNode}
         onTriggerCorruptChunk={triggerCorruptChunk}
+        onExplainWithAI={askTeacher}
       />
 
       {/* ── 6. Bottom Event Timeline (Section 24) ─────────────────── */}
-      <EventTimeline events={events} />
+      <EventTimeline
+        events={events}
+        onExplainEvent={(ev) =>
+          askTeacher(
+            `Please explain what this cluster event means and what the storage engine did under the hood: Type=${ev.type}, Node=${ev.node_id || 'N/A'}, Target=${ev.target || 'N/A'}, Details=${JSON.stringify(ev.payload || {})}`
+          )
+        }
+      />
 
       {/* ── 7. Ingestion Modal ────────────────────────────────────── */}
       <UploadModal
         isOpen={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onUpload={uploadObject}
+        onUpload={async (key, data, placement) => {
+          await uploadObject(key, data, placement);
+          askTeacher(
+            `I just uploaded object '${key}' (${data.length} bytes, placement: ${placement}). Please explain step by step how Vault partitioned this object, placed chunks across the consistent hash ring, and achieved write quorum.`
+          );
+        }}
       />
 
       {/* ── 8. Chaos Confirmation Modal (Section 27) ──────────────── */}
@@ -198,6 +225,8 @@ export const App: React.FC = () => {
         isOpen={aiOpen}
         onClose={() => setAiOpen(false)}
         onActionExecuted={refresh}
+        queuedPrompt={queuedAiPrompt}
+        onClearQueuedPrompt={() => setQueuedAiPrompt(null)}
       />
     </div>
   );
